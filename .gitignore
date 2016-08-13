@@ -244,3 +244,4 @@ ModelManifest.xml
 # FAKE - F# Make
 .fake/
 /Gateways/LaCrosseGateway/__vm
+/Gateways/JeeLinkGateway/__vm
