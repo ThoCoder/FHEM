@@ -245,3 +245,5 @@ ModelManifest.xml
 .fake/
 /Gateways/LaCrosseGateway/__vm
 /Gateways/JeeLinkGateway/__vm
+/Nodes/TT3Thermometer/__vm
+/Nodes/TT3Thermometer/~AutoRecover.TT3Thermometer.vcxproj
