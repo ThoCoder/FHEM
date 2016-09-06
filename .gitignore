@@ -247,3 +247,4 @@ ModelManifest.xml
 /Gateways/JeeLinkGateway/__vm
 /Nodes/TT3Thermometer/__vm
 /Nodes/TT3Thermometer/~AutoRecover.TT3Thermometer.vcxproj
+/Nodes/TT3GasSensor/__vm
