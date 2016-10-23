@@ -12,7 +12,7 @@
 #define DHT22_PIN 9
 #define DHT22_POWER 10
 
-#define myNodeID 14
+#define myNodeID 19
 #define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
