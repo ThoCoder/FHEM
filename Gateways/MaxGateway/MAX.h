@@ -5,6 +5,8 @@
 #define MAX_MAXDATALEN (MAX_BUFLEN-1)
 #define MAX_overlength 2
 
+extern uint8_t MAX_tracePackets;
+
 extern volatile uint32_t MAX_lastRXTXmillis;
 extern volatile uint8_t MAX_buf[MAX_BUFLEN];  // recv/xmit buf, 
 extern volatile uint8_t MAX_rxfill;     // number of data bytes in MAX_buf
@@ -21,6 +23,8 @@ void MAX_sleep(bool off);
 void MAX_Initialize();
 uint16_t MAX_recvDone();
 
+void MAX_sendStart(bool fast, const uint8_t* header, uint8_t headerLength, const uint8_t* payload, uint8_t payloadLength);
+void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint8_t* payload, uint8_t payloadLength);
 void MAX_send(bool fast, uint8_t msgId, uint8_t flags, uint8_t cmd, uint32_t src, uint32_t dest, uint8_t groupId, const uint8_t* payload, uint8_t payloadLength);
 #endif
 

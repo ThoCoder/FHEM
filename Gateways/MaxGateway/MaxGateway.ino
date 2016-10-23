@@ -1,6 +1,5 @@
 //#define USESERIAL 1
 //#define USESERIAL2 1
-#include "CRC16.h"
 #define RF69_COMPAT 1
 #include "JeeLib.h"
 #include "avr\wdt.h"
@@ -39,6 +38,7 @@ struct _config
 	long magic;
 	byte RssiThreshold;
 	byte LEDenabled;
+	byte Trace;
 } config;
 
 void loadConfig()
@@ -52,6 +52,7 @@ void loadConfig()
 	{
 		RssiThreshold = config.RssiThreshold;
 		LEDenabled = config.LEDenabled;
+		MAX_tracePackets = config.Trace;
 	}
 }
 
@@ -60,6 +61,7 @@ void saveConfig()
 	config.magic = CONFIG_MAGIC;
 	config.RssiThreshold = RssiThreshold;
 	config.LEDenabled = LEDenabled;
+	config.Trace = MAX_tracePackets;
 
 	eeprom_update_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
 }
@@ -102,6 +104,7 @@ void printConfiguration()
 	printf_P(PSTR("RateBps: 10000\n"));
 	printf_P(PSTR("RssiThresholdDB: -%d\n"), RssiThreshold);
 	printf_P(PSTR("LED: %s\n"), (LEDenabled != 0) ? "on" : "off");
+	printf_P(PSTR("Trace: %s\n"), (MAX_tracePackets != 0) ? "on" : "off");
 }
 
 const char helpText[] PROGMEM =
@@ -111,14 +114,54 @@ const char helpText[] PROGMEM =
 "v                ... print version and configuration\n"
 "<v>t             ... set RSSI threshold to -<v>dB\n"
 "<v>l             ... activity LED (0=off, 1=on)\n"
-"r                ... reset\n"
+"<v>x             ... packet tracing (0=off, 1=on)\n"
+"r                ... force reset\n\n"
+"Sllnnffccssssssddddddggpp...\\n send with long preamble\n"
+"Fllnnffccssssssddddddggpp...\\n send with short preamble\n"
+"  ll     .. length field (can be 00, will be filled in automatically\n"
+"  nn     .. message ID\n"
+"  ff     .. flags\n"
+"  cc     .. command\n"
+"  ssssss .. source address\n"
+"  dddddd .. destination address\n"
+"  gg     .. group ID\n"
+"  pp...  .. payload\n"
 "\n\n";
+
+char hexCmd = 0;
 
 void handleInput(char c)
 {
+	if (hexCmd != 0)
+	{
+		handleHexInput(c);
+		return;
+	}
+
+	if (top == 0)
+	{
+		switch (c)
+		{
+		case 'f':
+		case 'F':
+		case 's':
+		case 'S':
+			pending = 0;
+			hexCmd = c;
+			return;
+		}
+	}
+
+	if (c == '\r' || c == '\n')
+	{
+		value = top = pending = 0;
+		printf_P(PSTR("\n"));
+		return;
+	}
+
 	if (('0' <= c) && (c <= '9'))
 	{
-		value = 10 * value + c - '0';
+		value = (10 * value) + (c - '0');
 		pending = 1;
 		return;
 	}
@@ -163,7 +206,7 @@ void handleInput(char c)
 		return;
 	}
 
-	if ('a' <= c && c <= 'z')
+	if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'))
 	{
 		if (pending && (top < (sizeof(stack) - 1)))
 		{
@@ -201,17 +244,15 @@ void handleInput(char c)
 		saveConfig();
 		break;
 
+	case 'x':
+		MAX_tracePackets = (stack[0] != 0) ? 1 : 0;
+		printf_P(PSTR("Trace: %s\n"), (MAX_tracePackets != 0) ? "on" : "off");
+		saveConfig();
+		break;
+
 	case 'r':
 		printf_P(PSTR("\nFORCED RESET ...\n"));
 		Reset();
-		break;
-
-	case 's':
-		MAX_send(false, msgId++, 0, 0xF1, 0xAAFFEE, 0x0CD5B0, 0, wakeupPayload, sizeof(wakeupPayload));
-		break;
-
-	case 'f':
-		MAX_send(true, msgId++, 0, 0xF1, 0xAAFFEE, 0x0CD5B0, 0, wakeupPayload, sizeof(wakeupPayload));
 		break;
 
 	case 'h':
@@ -220,6 +261,70 @@ void handleInput(char c)
 	}
 
 	value = top = pending = 0;
+}
+
+void handleHexInput(char c)
+{
+	if (('0' <= c) && (c <= '9'))
+	{
+		value = (value << 4) + (c - '0');
+	}
+	else if (('a' <= c) && (c <= 'f'))
+	{
+		value = (value << 4) + (c - 'a' + 10);
+	}
+	else if (('A' <= c) && (c <= 'F'))
+	{
+		value = (value << 4) + (c - 'A' + 10);
+	}
+	else if (c == '\r' || c == '\n')
+	{
+		printf_P(PSTR("%c"), hexCmd);
+		for (int i = 0; i < top; i++)
+		{
+			printf_P(PSTR("%02X"), stack[i]);
+		}
+		printf_P(PSTR("\n"));
+
+		switch (hexCmd)
+		{
+		case 's':
+		case 'S':
+			// Sllnnffccssssssddddddggpp...
+			if (top < 11)
+				break;
+			MAX_send(false, stack + 1, 10, stack + 11, top - 11);
+			break;
+
+		case 'f':
+		case 'F':
+			// Fllnnffccssssssddddddggpp...
+			// F000100F1aaffee16d23f003f\n
+			if (top < 11)
+				break;
+			MAX_send(true, stack + 1, 10, stack + 11, top - 11);
+			break;
+		}
+
+		hexCmd = 0;
+		value = top = pending = 0;
+	}
+	else
+	{
+		return;
+	}
+
+	if (pending == 0)
+	{
+		pending = 1;
+		return;
+	}
+
+	if (top < (sizeof(stack) - 1))
+	{
+		stack[top++] = value; // truncated to 8 bits
+		value = pending = 0;
+	}
 }
 
 void setup()
@@ -300,28 +405,15 @@ void loop()
 
 			MAX_recvDone();
 
-#if defined(USESERIAL2)
-			printf_P(PSTR("L:%2d "), len);
-			for (int i = 0; i < buf_fill; i++)
+			if (crc == 0)
 			{
-				printf_P(PSTR("%02X "), buf[i]);
+				printf_P(PSTR("Z"));
+				for (int i = 0; i < buf_fill - 2; i++)
+				{
+					printf_P(PSTR("%02X"), buf[i]);
+				}
+				printf_P(PSTR(" (-%d)\n"), MAX_rssi >> 1);
 			}
-			printf_P(PSTR("\n"));
-#endif
-			uint32_t t = millis();
-			uint32_t dt = t - MAX_lastRXTXmillis;
-			MAX_lastRXTXmillis = t;
-
-			printf_P(PSTR("%6ld CRC:%04X L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="), 
-				dt, crc, len, buf[1], buf[2], buf[3],
-				buf[4], buf[5], buf[6], 
-				buf[7], buf[8], buf[9], buf[10],
-				rssi);
-			for (int i = 11; i < buf_fill - 2; i++)
-			{
-				printf_P(PSTR("%02X "), buf[i]);
-			}
-			printf_P(PSTR("\n"));
 
 			msgCount++;
 			activityLED(LED_ON);

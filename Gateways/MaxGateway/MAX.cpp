@@ -1,10 +1,11 @@
 //#define TRACE_RXTX 1
-
 #include "Arduino.h"
 #include <stdint.h>
 #include <RF69_avr.h>
 #include "MAX.h"
 #include "CRC16.h"
+
+uint8_t MAX_tracePackets = 0;
 
 #define REG_FIFO            0x00
 #define REG_OPMODE          0x01
@@ -171,6 +172,26 @@ uint16_t MAX_recvDone()
 #ifdef TRACE_RXTX
 				printf_P(PSTR("D"));
 #endif
+
+				if (MAX_tracePackets != 0)
+				{
+					uint32_t t = millis();
+					uint32_t dt = t - MAX_lastRXTXmillis;
+					MAX_lastRXTXmillis = t;
+
+					printf_P(PSTR("::%6ld CRC:%04X L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="),
+						dt, MAX_crc, MAX_len,
+						MAX_buf[1], MAX_buf[2], MAX_buf[3],
+						MAX_buf[4], MAX_buf[5], MAX_buf[6],
+						MAX_buf[7], MAX_buf[8], MAX_buf[9], MAX_buf[10],
+						MAX_rssi >> 1);
+					for (int i = 11; i < MAX_rxfill - 2; i++)
+					{
+						printf_P(PSTR("%02X "), MAX_buf[i]);
+					}
+					printf_P(PSTR("\n"));
+				}
+
 				return 1;
 			}
 		}
@@ -293,9 +314,9 @@ void MAX_Initialize()
 
 void sendToFifo(uint8_t n, uint8_t out, bool doCrc)
 {
-	if(doCrc)
+	if (doCrc)
 		MAX_crc = calc_crc_step(out, MAX_crc);
-		
+
 	while ((MAX_readReg(REG_IRQFLAGS2) & IRQ2_FIFOFULL) != 0);
 
 	MAX_writeReg(REG_FIFO, out ^ pn9_table[n]);
@@ -345,43 +366,18 @@ void MAX_sendStart(bool fast, const uint8_t* header, uint8_t headerLength, const
 	MAX_rxstate = TXDONE;
 }
 
-void MAX_send(bool fast, uint8_t msgId, uint8_t flags, uint8_t cmd, uint32_t src, uint32_t dest, uint8_t groupId, const uint8_t* payload, uint8_t payloadLength)
+void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint8_t* payload, uint8_t payloadLength)
 {
-	uint8_t hdr[10];
-	hdr[0] = msgId;
-	hdr[1] = flags;
-	hdr[2] = cmd;
-	hdr[3] = (src >> 16);
-	hdr[4] = (src >> 8);
-	hdr[5] = src;
-	hdr[6] = (dest >> 16);
-	hdr[7] = (dest >> 8);
-	hdr[8] = dest;
-	hdr[9] = groupId;
-
-	uint32_t t = millis();
-	uint32_t dt = t - MAX_lastRXTXmillis;
-	MAX_lastRXTXmillis = t;
-
-	printf_P(PSTR("%6ld     SEND L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="),
-		dt, 10 + payloadLength,
-		hdr[0], hdr[1], hdr[2],
-		hdr[3], hdr[4], hdr[5],
-		hdr[6], hdr[7], hdr[8], hdr[9],
-		0);
-	for (int p = 0; p < payloadLength; p++)
-	{
-		printf_P(PSTR("%02X "), payload[p]);
-	}
-	printf_P(PSTR("\n"));
-
-
 #ifdef TRACE_RXTX
 	printf_P(PSTR("?"));
 #endif
 	while (!MAX_canSend());
 
-	MAX_sendStart(fast, hdr, 10, payload, payloadLength);
+	MAX_sendStart(fast, header, headerLength, payload, payloadLength);
+
+	uint32_t t = millis();
+	uint32_t dt = t - MAX_lastRXTXmillis;
+	MAX_lastRXTXmillis = t;
 
 #ifdef TRACE_RXTX
 	printf_P(PSTR("w"));
@@ -391,4 +387,37 @@ void MAX_send(bool fast, uint8_t msgId, uint8_t flags, uint8_t cmd, uint32_t src
 #ifdef TRACE_RXTX
 	printf_P(PSTR("W"));
 #endif
+
+	if (MAX_tracePackets != 0)
+	{
+		printf_P(PSTR("::%6ld SENT %c   L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="),
+			dt, fast ? 'F' : ' ',
+			headerLength + payloadLength,
+			header[0], header[1], header[2],
+			header[3], header[4], header[5],
+			header[6], header[7], header[8], header[9],
+			0);
+		for (int p = 0; p < payloadLength; p++)
+		{
+			printf_P(PSTR("%02X "), payload[p]);
+		}
+		printf_P(PSTR("\n"));
+	}
+}
+
+void MAX_send(bool fast, uint8_t msgId, uint8_t flags, uint8_t cmd, uint32_t src, uint32_t dest, uint8_t groupId, const uint8_t* payload, uint8_t payloadLength)
+{
+	uint8_t header[10];
+	header[0] = msgId;
+	header[1] = flags;
+	header[2] = cmd;
+	header[3] = (src >> 16);
+	header[4] = (src >> 8);
+	header[5] = src;
+	header[6] = (dest >> 16);
+	header[7] = (dest >> 8);
+	header[8] = dest;
+	header[9] = groupId;
+
+	MAX_send(fast, header, 10, payload, payloadLength);
 }
