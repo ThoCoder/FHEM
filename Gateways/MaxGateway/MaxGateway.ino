@@ -13,19 +13,12 @@
 #define LED_OFF HIGH
 byte LEDenabled = 1;
 
-#define DEVICETYPE 10
-#define NETWORK 77
-#define NODEID 31
-
 #define SWITCHRATEINTERVAL 59000
 byte RssiThreshold = 110;
-uint8_t msgId = 1;
+byte AutoAck = 0;
+byte PairMode = 0;
 
 #define RECEIVEWATCHDOGLOOPS 6
-
-#define CMD_temperature 12
-#define CMD_humidity 16
-#define CMD_PowerSupply 252
 
 #define STACKSIZE 32
 unsigned long value;
@@ -39,6 +32,9 @@ struct _config
 	byte RssiThreshold;
 	byte LEDenabled;
 	byte Trace;
+	uint32_t OwnAddress;
+	byte AutoAck;
+	byte PairMode;
 } config;
 
 void loadConfig()
@@ -53,6 +49,9 @@ void loadConfig()
 		RssiThreshold = config.RssiThreshold;
 		LEDenabled = config.LEDenabled;
 		MAX_tracePackets = config.Trace;
+		MAX_ownAddress = config.OwnAddress;
+		AutoAck = config.AutoAck;
+		PairMode = config.PairMode;
 	}
 }
 
@@ -62,6 +61,9 @@ void saveConfig()
 	config.RssiThreshold = RssiThreshold;
 	config.LEDenabled = LEDenabled;
 	config.Trace = MAX_tracePackets;
+	config.OwnAddress = MAX_ownAddress;
+	config.AutoAck = AutoAck;
+	config.PairMode = PairMode;
 
 	eeprom_update_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
 }
@@ -105,19 +107,27 @@ void printConfiguration()
 	printf_P(PSTR("RssiThresholdDB: -%d\n"), RssiThreshold);
 	printf_P(PSTR("LED: %s\n"), (LEDenabled != 0) ? "on" : "off");
 	printf_P(PSTR("Trace: %s\n"), (MAX_tracePackets != 0) ? "on" : "off");
+	printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
+	printf_P(PSTR("AutoAck: %s\n"), (AutoAck != 0) ? "on" : "off");
+	printf_P(PSTR("PairMode: %s\n"), (PairMode != 0) ? "on" : "off");
 }
 
 const char helpText[] PROGMEM =
 "\n"
 "Available commands:\n\n"
-"h                ... this help\n"
-"v                ... print version and configuration\n"
-"<v>t             ... set RSSI threshold to -<v>dB\n"
-"<v>l             ... activity LED (0=off, 1=on)\n"
-"<v>x             ... packet tracing (0=off, 1=on)\n"
-"r                ... force reset\n\n"
-"Sllnnffccssssssddddddggpp...\\n send with long preamble\n"
-"Fllnnffccssssssddddddggpp...\\n send with short preamble\n"
+"h           .. this help\n"
+"v           .. print version and configuration\n"
+"<v>t        .. set RSSI threshold to -<v>dB\n"
+"<v>l        .. activity LED (0=off, 1=on)\n"
+"<v>x        .. packet tracing (0=off, 1=on)\n"
+"r           .. force reset\n"
+"\n"
+"ZaAAAAAA\\n .. set own address\n"
+"<v>a        .. auto ack (0=off, 1=on)\n"
+"<v>p        .. pair mode (0=off, 1=on)\n"
+"\n"
+"Zsllnnffccssssssddddddggpp...\\n  .. send with long preamble\n"
+"Zfllnnffccssssssddddddggpp...\\n  .. send with short preamble\n"
 "  ll     .. length field (can be 00, will be filled in automatically\n"
 "  nn     .. message ID\n"
 "  ff     .. flags\n"
@@ -129,6 +139,7 @@ const char helpText[] PROGMEM =
 "\n\n";
 
 char hexCmd = 0;
+char hexSubCmd = 0;
 
 void handleInput(char c)
 {
@@ -142,10 +153,8 @@ void handleInput(char c)
 	{
 		switch (c)
 		{
-		case 'f':
-		case 'F':
-		case 's':
-		case 'S':
+		case 'Z':
+		case 'z':
 			pending = 0;
 			hexCmd = c;
 			return;
@@ -222,8 +231,6 @@ void handleInput(char c)
 		printf_P(PSTR("%c\n"), c);
 	}
 
-	uint8_t wakeupPayload[] = { 0x3F };
-
 	switch (c)
 	{
 	case 'v':
@@ -250,6 +257,18 @@ void handleInput(char c)
 		saveConfig();
 		break;
 
+	case 'a':
+		AutoAck = (stack[0] != 0) ? 1 : 0;
+		printf_P(PSTR("AutoAck: %s\n"), (AutoAck != 0) ? "on" : "off");
+		saveConfig();
+		break;
+
+	case 'p':
+		PairMode = (stack[0] != 0) ? 1 : 0;
+		printf_P(PSTR("PairMode: %s\n"), (PairMode != 0) ? "on" : "off");
+		saveConfig();
+		break;
+
 	case 'r':
 		printf_P(PSTR("\nFORCED RESET ...\n"));
 		Reset();
@@ -265,6 +284,12 @@ void handleInput(char c)
 
 void handleHexInput(char c)
 {
+	if (hexSubCmd == 0)
+	{
+		hexSubCmd = c;
+		return;
+	}
+
 	if (('0' <= c) && (c <= '9'))
 	{
 		value = (value << 4) + (c - '0');
@@ -286,11 +311,11 @@ void handleHexInput(char c)
 		}
 		printf_P(PSTR("\n"));
 
-		switch (hexCmd)
+		switch (hexSubCmd)
 		{
 		case 's':
 		case 'S':
-			// Sllnnffccssssssddddddggpp...
+			// Zsllnnffccssssssddddddggpp...
 			if (top < 11)
 				break;
 			MAX_send(false, stack + 1, 10, stack + 11, top - 11);
@@ -298,15 +323,21 @@ void handleHexInput(char c)
 
 		case 'f':
 		case 'F':
-			// Fllnnffccssssssddddddggpp...
-			// F000100F1aaffee16d23f003f\n
+			// Zfllnnffccssssssddddddggpp...
 			if (top < 11)
 				break;
 			MAX_send(true, stack + 1, 10, stack + 11, top - 11);
 			break;
+
+		case 'a':
+		case 'A':
+			MAX_ownAddress = (((uint32_t)stack[0]) << 16) | (((uint32_t)stack[1]) << 8) | ((uint32_t)stack[2]);
+			printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
+			saveConfig();
+			break;
 		}
 
-		hexCmd = 0;
+		hexCmd = hexSubCmd = 0;
 		value = top = pending = 0;
 	}
 	else
@@ -403,22 +434,43 @@ void loop()
 			uint16_t crc = MAX_crc;
 			uint8_t rssi = MAX_rssi >> 1;
 
-			MAX_recvDone();
+			if (crc != 0)
+				continue;
 
-			if (crc == 0)
-			{
-				printf_P(PSTR("Z"));
-				for (int i = 0; i < buf_fill - 2; i++)
-				{
-					printf_P(PSTR("%02X"), buf[i]);
-				}
-				printf_P(PSTR(" (-%d)\n"), MAX_rssi >> 1);
-			}
+			MAX_recvDone();
 
 			msgCount++;
 			activityLED(LED_ON);
 
+			printf_P(PSTR("Z"));
+			for (int i = 0; i < buf_fill - 2; i++)
+			{
+				printf_P(PSTR("%02X"), buf[i]);
+			}
+			printf_P(PSTR("%02X\n"), MAX_rssi >> 1);
 
+			uint8_t cmd = MxP_Cmd(buf);
+			uint8_t msgId = MxP_MsgId(buf);
+			uint32_t src = MxP_Src(buf);
+			uint32_t dst = MxP_Dst(buf);
+			uint8_t payloadOk = 0;
+
+			if (PairMode && (cmd == MxM_PairPing))
+			{
+				delay(20);
+				MAX_send(true, msgId, 0, MxM_PairPong, MAX_ownAddress, src, 0, &payloadOk, 1);
+			}
+			else if(AutoAck && (dst == MAX_ownAddress) &&
+					((cmd == MxM_ShutterContactState) ||
+					(cmd == MxM_SetTemperature) ||
+					(cmd == MxM_PushButtonState)))
+			{
+				delay(20);
+				MAX_send(true, msgId, 2, MxM_Ack, MAX_ownAddress, src, 0, &payloadOk, 1);
+				printf_P(PSTR("Z0C%02X0202%06lX%06lX000000\n"), msgId, MAX_ownAddress, src);
+			}
+				
+			handleShutterContact(buf);
 
 			activityLED(LED_OFF);
 		}
@@ -430,3 +482,18 @@ void loop()
 		Reset();
 	}
 }
+
+void handleShutterContact(uint8_t* buf)
+{
+	byte plOk[] = { 0 };
+	byte plWakeup[1] = { 0x3f };
+	uint32_t shutterAddress = 0x16d23f;
+
+	if (MxP_Cmd(buf) == MxM_ShutterContactState && MxP_Dst(buf) == MAX_ownAddress)
+	{
+		MAX_recvDone();
+		delay(20);
+		MAX_send(true, 1, 0, MxM_Wakeup, MAX_ownAddress, shutterAddress, 0, plWakeup, sizeof(plWakeup));
+	}
+}
+

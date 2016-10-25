@@ -26,5 +26,24 @@ uint16_t MAX_recvDone();
 void MAX_sendStart(bool fast, const uint8_t* header, uint8_t headerLength, const uint8_t* payload, uint8_t payloadLength);
 void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint8_t* payload, uint8_t payloadLength);
 void MAX_send(bool fast, uint8_t msgId, uint8_t flags, uint8_t cmd, uint32_t src, uint32_t dest, uint8_t groupId, const uint8_t* payload, uint8_t payloadLength);
+
+extern uint32_t MAX_ownAddress;
+
+#define MxP_Len(buf) (buf[0])
+#define MxP_MsgId(buf) (buf[1])
+#define MxP_Flags(buf) (buf[2])
+#define MxP_Cmd(buf) (buf[3])
+#define MxP_Src(buf) ((((uint32_t)buf[4])<<16) | (((uint32_t)buf[5])<<8) | (uint32_t)buf[6])
+#define MxP_Dst(buf) ((((uint32_t)buf[7])<<16) | (((uint32_t)buf[8])<<8) | (uint32_t)buf[9])
+#define MxP_Grp(buf) (buf[10])
+
+#define MxM_PairPing 0x00
+#define MxM_PairPong 0x01
+#define MxM_Ack 0x02
+#define MxM_ShutterContactState 0x30
+#define MxM_SetTemperature 0x40
+#define MxM_PushButtonState 0x50
+#define MxM_Wakeup 0xF1
+
 #endif
 
