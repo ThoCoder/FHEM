@@ -6,6 +6,8 @@
 #define MAX_overlength 2
 
 extern uint8_t MAX_tracePackets;
+extern uint8_t MAX_culMessages;
+extern uint32_t MAX_ownAddress;
 
 extern volatile uint32_t MAX_lastRXTXmillis;
 extern volatile uint8_t MAX_buf[MAX_BUFLEN];  // recv/xmit buf, 
@@ -26,8 +28,6 @@ uint16_t MAX_recvDone();
 void MAX_sendStart(bool fast, const uint8_t* header, uint8_t headerLength, const uint8_t* payload, uint8_t payloadLength);
 void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint8_t* payload, uint8_t payloadLength);
 void MAX_send(bool fast, uint8_t msgId, uint8_t flags, uint8_t cmd, uint32_t src, uint32_t dest, uint8_t groupId, const uint8_t* payload, uint8_t payloadLength);
-
-extern uint32_t MAX_ownAddress;
 
 #define MxP_Len(buf) (buf[0])
 #define MxP_MsgId(buf) (buf[1])

@@ -13,12 +13,13 @@
 #define LED_OFF HIGH
 byte LEDenabled = 1;
 
-#define SWITCHRATEINTERVAL 59000
+#define LOOP_TIMEOUT_INTERVAL 59000
+#define RECEIVEWATCHDOGLOOPS 6
+
 byte RssiThreshold = 110;
+byte nextMsgId = 1;
 byte AutoAck = 0;
 byte PairMode = 0;
-
-#define RECEIVEWATCHDOGLOOPS 6
 
 #define STACKSIZE 32
 unsigned long value;
@@ -35,6 +36,7 @@ struct _config
 	uint32_t OwnAddress;
 	byte AutoAck;
 	byte PairMode;
+	byte CulMessages;
 } config;
 
 void loadConfig()
@@ -52,6 +54,7 @@ void loadConfig()
 		MAX_ownAddress = config.OwnAddress;
 		AutoAck = config.AutoAck;
 		PairMode = config.PairMode;
+		MAX_culMessages = config.CulMessages;
 	}
 }
 
@@ -64,6 +67,7 @@ void saveConfig()
 	config.OwnAddress = MAX_ownAddress;
 	config.AutoAck = AutoAck;
 	config.PairMode = PairMode;
+	config.CulMessages = MAX_culMessages;
 
 	eeprom_update_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
 }
@@ -110,6 +114,7 @@ void printConfiguration()
 	printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
 	printf_P(PSTR("AutoAck: %s\n"), (AutoAck != 0) ? "on" : "off");
 	printf_P(PSTR("PairMode: %s\n"), (PairMode != 0) ? "on" : "off");
+	printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
 }
 
 const char helpText[] PROGMEM =
@@ -125,6 +130,7 @@ const char helpText[] PROGMEM =
 "ZaAAAAAA\\n .. set own address\n"
 "<v>a        .. auto ack (0=off, 1=on)\n"
 "<v>p        .. pair mode (0=off, 1=on)\n"
+"<v>c        .. CUL messages (0=off, 1=on)\n"
 "\n"
 "Zsllnnffccssssssddddddggpp...\\n  .. send with long preamble\n"
 "Zfllnnffccssssssddddddggpp...\\n  .. send with short preamble\n"
@@ -269,6 +275,12 @@ void handleInput(char c)
 		saveConfig();
 		break;
 
+	case 'c':
+		MAX_culMessages = (stack[0] != 0) ? 1 : 0;
+		printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
+		saveConfig();
+		break;
+
 	case 'r':
 		printf_P(PSTR("\nFORCED RESET ...\n"));
 		Reset();
@@ -304,13 +316,6 @@ void handleHexInput(char c)
 	}
 	else if (c == '\r' || c == '\n')
 	{
-		printf_P(PSTR("%c"), hexCmd);
-		for (int i = 0; i < top; i++)
-		{
-			printf_P(PSTR("%02X"), stack[i]);
-		}
-		printf_P(PSTR("\n"));
-
 		switch (hexSubCmd)
 		{
 		case 's':
@@ -415,8 +420,8 @@ void loop()
 
 	for (byte watchdogLoops = 0; watchdogLoops < RECEIVEWATCHDOGLOOPS; watchdogLoops++)
 	{
-		MilliTimer ackTimer;
-		while (!ackTimer.poll(SWITCHRATEINTERVAL))
+		MilliTimer loopTimer;
+		while (!loopTimer.poll(LOOP_TIMEOUT_INTERVAL))
 		{
 			wdt_reset();
 
@@ -442,12 +447,15 @@ void loop()
 			msgCount++;
 			activityLED(LED_ON);
 
-			printf_P(PSTR("Z"));
-			for (int i = 0; i < buf_fill - 2; i++)
+			if (MAX_culMessages != 0)
 			{
-				printf_P(PSTR("%02X"), buf[i]);
+				printf_P(PSTR("Z"));
+				for (int i = 0; i < buf_fill - 2; i++)
+				{
+					printf_P(PSTR("%02X"), buf[i]);
+				}
+				printf_P(PSTR("%02X\n"), MAX_rssi >> 1);
 			}
-			printf_P(PSTR("%02X\n"), MAX_rssi >> 1);
 
 			uint8_t cmd = MxP_Cmd(buf);
 			uint8_t msgId = MxP_MsgId(buf);
@@ -467,7 +475,6 @@ void loop()
 			{
 				delay(20);
 				MAX_send(true, msgId, 2, MxM_Ack, MAX_ownAddress, src, 0, &payloadOk, 1);
-				printf_P(PSTR("Z0C%02X0202%06lX%06lX000000\n"), msgId, MAX_ownAddress, src);
 			}
 				
 			handleShutterContact(buf);
@@ -485,15 +492,13 @@ void loop()
 
 void handleShutterContact(uint8_t* buf)
 {
-	byte plOk[] = { 0 };
+	// Zf008000F112345616d23f003f\n
 	byte plWakeup[1] = { 0x3f };
-	uint32_t shutterAddress = 0x16d23f;
 
 	if (MxP_Cmd(buf) == MxM_ShutterContactState && MxP_Dst(buf) == MAX_ownAddress)
 	{
-		MAX_recvDone();
 		delay(20);
-		MAX_send(true, 1, 0, MxM_Wakeup, MAX_ownAddress, shutterAddress, 0, plWakeup, sizeof(plWakeup));
+		MAX_send(true, nextMsgId++, 0, MxM_Wakeup, MAX_ownAddress, MxP_Src(buf), 0, plWakeup, sizeof(plWakeup));
 	}
 }
 

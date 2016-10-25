@@ -6,6 +6,8 @@
 #include "CRC16.h"
 
 uint8_t MAX_tracePackets = 0;
+uint8_t MAX_culMessages = 1;
+uint32_t MAX_ownAddress = 0x123456;
 
 #define REG_FIFO            0x00
 #define REG_OPMODE          0x01
@@ -51,8 +53,6 @@ volatile uint8_t MAX_rxfill;     // number of data bytes in MAX_buf
 volatile int8_t MAX_rxstate;     // current transceiver state
 volatile uint8_t MAX_rssi;
 volatile uint16_t MAX_crc;
-
-uint32_t MAX_ownAddress = 0x123456;
 
 static const uint8_t pn9_table[] = {
 	0xff, 0xe1, 0x1d, 0x9a, 0xed, 0x85, 0x33, 0x24,
@@ -363,6 +363,8 @@ void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint
 	printf_P(PSTR("W"));
 #endif
 
+	MAX_recvDone();
+
 	if (MAX_tracePackets != 0)
 	{
 		printf_P(PSTR("::%6ld SENT %c   L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="),
@@ -377,6 +379,16 @@ void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint
 			printf_P(PSTR("%02X "), payload[p]);
 		}
 		printf_P(PSTR("\n"));
+	}
+
+	if (MAX_culMessages != 0)
+	{
+		printf_P(PSTR("Z%c%02X"), fast ? 'f' : 's', headerLength + payloadLength);
+		for (uint8_t h = 0; h < headerLength; h++)
+			printf_P(PSTR("%02X"), header[h]);
+		for (uint8_t p = 0; p < payloadLength; p++)
+			printf_P(PSTR("%02X"), payload[p]);
+		printf_P(PSTR("00\n"));
 	}
 }
 
