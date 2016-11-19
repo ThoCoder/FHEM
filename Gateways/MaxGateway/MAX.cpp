@@ -48,6 +48,7 @@ uint32_t MAX_ownAddress = 0x123456;
 enum { TXCRC1, TXCRC2, TXTAIL, TXDONE, TXIDLE, TXRECV };
 
 volatile uint32_t MAX_lastRXTXmillis;
+volatile uint32_t MAX_RXTXmillis0;
 volatile uint8_t MAX_buf[MAX_BUFLEN];  // recv/xmit buf, 
 volatile uint8_t MAX_rxfill;     // number of data bytes in MAX_buf
 volatile int8_t MAX_rxstate;     // current transceiver state
@@ -153,9 +154,10 @@ uint16_t MAX_recvDone()
 					uint32_t t = millis();
 					uint32_t dt = t - MAX_lastRXTXmillis;
 					MAX_lastRXTXmillis = t;
+					uint32_t dt0 = t - MAX_RXTXmillis0;
 
-					printf_P(PSTR("::%6ld CRC:%04X L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="),
-						dt, MAX_crc, MAX_len,
+					printf_P(PSTR("%10ld::%6ld CRC:%04X L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="),
+						dt0, dt, MAX_crc, MAX_len,
 						MAX_buf[1], MAX_buf[2], MAX_buf[3],
 						MAX_buf[4], MAX_buf[5], MAX_buf[6],
 						MAX_buf[7], MAX_buf[8], MAX_buf[9], MAX_buf[10],
@@ -353,6 +355,7 @@ void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint
 	uint32_t t = millis();
 	uint32_t dt = t - MAX_lastRXTXmillis;
 	MAX_lastRXTXmillis = t;
+	uint32_t dt0 = t - MAX_RXTXmillis0;
 
 #ifdef TRACE_RXTX
 	printf_P(PSTR("w"));
@@ -367,8 +370,8 @@ void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint
 
 	if (MAX_tracePackets != 0)
 	{
-		printf_P(PSTR("::%6ld SENT %c   L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="),
-			dt, fast ? 'F' : ' ',
+		printf_P(PSTR("%10ld::%6ld SENT %c   L:%2d No:%02X F:%02X Cmd:%02X %02X%02X%02X -> %02X%02X%02X G:%02X (-%2d)  P="),
+			dt0, dt, fast ? 'F' : ' ',
 			headerLength + payloadLength,
 			header[0], header[1], header[2],
 			header[3], header[4], header[5],

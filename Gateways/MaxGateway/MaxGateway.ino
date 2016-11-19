@@ -414,6 +414,13 @@ void setup()
 	digitalWrite(LED_PIN, LED_OFF);
 }
 
+uint32_t wakeupDelay = 0;
+uint32_t shutterAddress = 0;
+uint32_t lastWakeupTick = 0;
+byte waitWakeupAck = 0;
+#define WAKEUPTIMEOUT 0x3F
+byte awake = 0;
+
 void loop()
 {
 	int msgCount = 0;
@@ -427,6 +434,8 @@ void loop()
 
 			while (Serial.available())
 				handleInput(Serial.read());
+
+			sendWakeups();
 
 			if (MAX_recvDone() == 0)
 				continue;
@@ -468,15 +477,15 @@ void loop()
 				delay(20);
 				MAX_send(true, msgId, 0, MxM_PairPong, MAX_ownAddress, src, 0, &payloadOk, 1);
 			}
-			else if(AutoAck && (dst == MAX_ownAddress) &&
-					((cmd == MxM_ShutterContactState) ||
-					(cmd == MxM_SetTemperature) ||
+			else if (AutoAck && (dst == MAX_ownAddress) &&
+				((cmd == MxM_ShutterContactState) ||
+				(cmd == MxM_SetTemperature) ||
 					(cmd == MxM_PushButtonState)))
 			{
 				delay(20);
 				MAX_send(true, msgId, 2, MxM_Ack, MAX_ownAddress, src, 0, &payloadOk, 1);
 			}
-				
+
 			handleShutterContact(buf);
 
 			activityLED(LED_OFF);
@@ -490,15 +499,80 @@ void loop()
 	}
 }
 
-void handleShutterContact(uint8_t* buf)
+void sendWakeup(uint32_t dstAddress, uint8_t wakeTimeout)
 {
 	// Zf008000F112345616d23f003f\n
-	byte plWakeup[1] = { 0x3f };
+	delay(20);
+	MAX_send(true, nextMsgId++, 0, MxM_Wakeup, MAX_ownAddress, dstAddress, 0, &wakeTimeout, 1);
+	lastWakeupTick = millis();
+}
 
-	if (MxP_Cmd(buf) == MxM_ShutterContactState && MxP_Dst(buf) == MAX_ownAddress)
+void handleShutterContact(uint8_t* buf)
+{
+	uint8_t cmd = MxP_Cmd(buf);
+	uint8_t msgId = MxP_MsgId(buf);
+	uint32_t src = MxP_Src(buf);
+	uint32_t dst = MxP_Dst(buf);
+	uint8_t payloadOk = 0;
+
+	switch (cmd)
 	{
-		delay(20);
-		MAX_send(true, nextMsgId++, 0, MxM_Wakeup, MAX_ownAddress, MxP_Src(buf), 0, plWakeup, sizeof(plWakeup));
+	case MxM_Ack:
+
+		if (dst != MAX_ownAddress)
+			return;
+
+		if (waitWakeupAck != 0)
+		{
+			printf_P(PSTR("%6ld GOT WAKEUP ACK\n"), wakeupDelay);
+			waitWakeupAck = 0;
+		}
+		return;
+
+	case MxM_ShutterContactState:
+
+		if ((dst >= 0x999900) && (dst <= 0x9999FF))
+		{
+			delay(20);
+			MAX_send(true, msgId, 2, MxM_Ack, dst, src, 0, &payloadOk, 1);
+		}
+		else if ((dst != MAX_ownAddress) && (dst != 0))
+		{
+			return;
+		}
+
+		if (wakeupDelay != 0)
+			return;
+
+		wakeupDelay = 5000;
+		shutterAddress = src;
+		waitWakeupAck = 1;
+		printf_P(PSTR("%6ld SEND WAKEUP\n"), wakeupDelay);
+		sendWakeup(shutterAddress, WAKEUPTIMEOUT);
+		return;
 	}
 }
 
+void sendWakeups()
+{
+	if (wakeupDelay == 0)
+		return;
+
+	if (millis() - lastWakeupTick >= wakeupDelay)
+	{
+		if (waitWakeupAck != 0)
+		{
+			printf_P(PSTR("%6ld WAKEUP ACK TIMEOUT\n"), wakeupDelay);
+			wakeupDelay = 0;
+			waitWakeupAck = 0;
+			return;
+		}
+
+		printf_P(PSTR("%6ld SEND WAKEUP\n"), wakeupDelay);
+		//wakeupDelay *= 2;
+		//wakeupDelay += 2000;
+		wakeupDelay = 30000;
+		waitWakeupAck = 1;
+		sendWakeup(shutterAddress, WAKEUPTIMEOUT);
+	}
+}

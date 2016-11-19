@@ -10,6 +10,7 @@ extern uint8_t MAX_culMessages;
 extern uint32_t MAX_ownAddress;
 
 extern volatile uint32_t MAX_lastRXTXmillis;
+extern volatile uint32_t MAX_RXTXmillis0;
 extern volatile uint8_t MAX_buf[MAX_BUFLEN];  // recv/xmit buf, 
 extern volatile uint8_t MAX_rxfill;     // number of data bytes in MAX_buf
 #define MAX_len MAX_buf[0]
