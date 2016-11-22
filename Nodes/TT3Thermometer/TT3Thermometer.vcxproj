@@ -93,7 +93,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny;S:\Software\Development\ARDUINO\Repositories\GitHub\ThoCoder\FHEM\Nodes\TT3Thermometer;C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master;C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\utility;C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master;C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\utility;C:\Program Files (x86)\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\libraries;C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\IDE\Extensions\5zimwcbd.z13\Micro Platforms\default\debuggers;C:\Users\Thomas\Documents\Arduino\libraries;C:\Program Files (x86)\Arduino\hardware\tools\avr/avr/include/;C:\Program Files (x86)\Arduino\hardware\tools\avr//avr/include/avr/;C:\Program Files (x86)\Arduino\hardware\tools\avr/lib\gcc\avr\4.8.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny;S:\Software\Development\ARDUINO\Repositories\GitHub\ThoCoder\FHEM\Nodes\TT3Thermometer;C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master;C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\utility;C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master;C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\utility;C:\Program Files (x86)\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\libraries;C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\IDE\Extensions\5zimwcbd.z13\Micro Platforms\default\debuggers;C:\Users\Thomas\Documents\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny;C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master;C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master;C:\Program Files (x86)\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\libraries;C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\IDE\Extensions\5zimwcbd.z13\Micro Platforms\default\debuggers;C:\Users\Thomas\Documents\Arduino\libraries;C:\Program Files (x86)\Arduino\hardware\tools\avr/avr/include/;C:\Program Files (x86)\Arduino\hardware\tools\avr//avr/include/avr/;C:\Program Files (x86)\Arduino\hardware\tools\avr/lib\gcc\avr\4.8.1\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>S:\Software\Development\ARDUINO\Repositories\GitHub\ThoCoder\FHEM\Nodes\TT3Thermometer\__vm\.TT3Thermometer.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <PreprocessorDefinitions>__AVR_ATtiny84__;__AVR_ATTINY84__;F_CPU=8000000L;ARDUINO=10605;ARDUINO_AVR_TINY_TINY_AVR_ATTINY84AT8;ARDUINO_ARCH_AVR;__cplusplus=201103L;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -122,7 +122,69 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Arduino.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\binary.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_adc.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_build_options.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_macros.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_pins.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_timers.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\HardwareSerial.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\pins_arduino.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Print.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\PwmTimer.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Stream.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\ToneTimer.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\UserTimer.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WCharacter.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WConstants.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring_private.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WProgram.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WString.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\DHT22.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\JeeLib.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\Ports.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\PortsBMP085.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\PortsLCD.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\PortsSHT11.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF12.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF12sio.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF69.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF69_avr.h" />
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF69_compat.h" />
     <ClInclude Include="__vm\.TT3Thermometer.vsarduino.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\HardwareSerial.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\main.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\pins_arduino.c" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Print.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial115200.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial38400.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial9600.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerialErrors.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Tone.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WInterrupts.c" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring.c" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring_analog.c" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring_digital.c" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring_pulse.c" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring_shift.c" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WMath.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WString.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\DHT22.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\Ports.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\PortsBMP085.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\PortsLCD.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\PortsRF12.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\PortsSHT11.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF12.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF12sio.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF69.cpp" />
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF69_compat.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
