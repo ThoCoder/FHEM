@@ -3,7 +3,7 @@
 //#define LEDFLASHS
 
 #define DHT22present 1
-#define BMP180present 1
+//#define BMP180present 1
 #define RF69_COMPAT 1
 #include <JeeLib.h>
 
