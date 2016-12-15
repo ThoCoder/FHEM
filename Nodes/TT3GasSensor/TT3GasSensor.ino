@@ -1,6 +1,7 @@
 //#define USESERIAL
 //#define USESERIAL2
-#define LEDFLASHS
+//#define LED_COUNTFLASHS
+#define LED_SENDFLASHS
 
 #define RF69_COMPAT 1
 #include <JeeLib.h>
@@ -15,17 +16,21 @@
 #define ACK_TIME 50
 #define RETRYDELAY 500
 #define RETRIES 5
-#define WAITLOOPS 60
-#define WAITINTERVAL 5000
+#define WAITLOOPS 600
+#define WAITINTERVAL 500
+#define DEVIDER 10 
 
-// set counter (RF12Demo V12.1)
-// 195,nnnnnnD10m
+// set counter (RF12Demo V12.1):            195,nnnnnnD10m
+// set counter (ThoGateway::JeeLink V2.1):  10,195,nnnnnnDm
+// nnnnnn .. gas counter value to set in (0.1m^3 / DEVIDER) units
 
 short GasCounter_HallValue;
 byte GasCounter_HallPrevState = 255;
 byte GasCounter_HallState = 255;
-short GasCounter_HallValueHighThreshold = 470;
-short GasCounter_HallValueLowThreshold = 430;
+short GasCounter_HallValueHighThreshold = 480;
+short GasCounter_HallValueLowThreshold = 450;
+byte GasCounter_Signal = 0;
+byte GasCounter_Fraction = DEVIDER - 1;
 long GasCounter_Value = 0;
 bool GasCounter_ValueReset = false;
 
@@ -144,24 +149,21 @@ bool UpdateGasCounterState()
 	GasCounter_HallValue = readHallValue();
 	GasCounter_HallPrevState = GasCounter_HallState;
 
-#if defined(USESERIAL)
-	Serial.print(" H=");
-	Serial.print(GasCounter_HallValue, DEC);
-	Serial.print(" S=");
-	Serial.print(GasCounter_HallState, DEC);
-#endif
-
 	if (GasCounter_HallState == 0)
 	{
 		// check state transition LOW -> HIGH
 		if (GasCounter_HallValue <= GasCounter_HallValueLowThreshold)
 		{
 			GasCounter_HallState = 1;
-			changed = true;
 
-#if defined(USESERIAL)
-			Serial.print(" -> S=1");
-#endif
+			GasCounter_Fraction++;
+			if (GasCounter_Fraction == DEVIDER)
+			{
+				GasCounter_Fraction = 0;
+				GasCounter_Value++;
+				GasCounter_Signal = 1;
+				changed = true;
+			}
 		}
 	}
 	else if (GasCounter_HallState == 1)
@@ -170,13 +172,11 @@ bool UpdateGasCounterState()
 		if (GasCounter_HallValue >= GasCounter_HallValueHighThreshold)
 		{
 			GasCounter_HallState = 0;
-			GasCounter_Value++;
-			changed = true;
-
-#if defined(USESERIAL)
-			Serial.print(" -> S=0 C=");
-			Serial.print(GasCounter_Value, DEC);
-#endif
+			if (GasCounter_Fraction == DEVIDER / 2)
+			{
+				GasCounter_Signal = 0;
+				changed = true;
+			}
 		}
 	}
 	else
@@ -203,13 +203,25 @@ bool UpdateGasCounterState()
 	}
 
 #if defined(USESERIAL)
+	Serial.print(" H=");
+	Serial.print(GasCounter_HallValue, DEC);
+	Serial.print(" st=");
+	Serial.print(GasCounter_HallState, DEC);
+	Serial.print(" S=");
+	Serial.print(GasCounter_Signal, DEC);
+	Serial.print(" C=");
+	Serial.print(GasCounter_Value, DEC);
+	Serial.print(",");
+	Serial.print(GasCounter_Fraction, DEC);
 	Serial.println();
 #endif
 
+#if defined(LED_COUNTFLASHS)
 	if (GasCounter_HallState != GasCounter_HallPrevState)
 	{
-		flashLED(20, 1);
+		flashLED(10, 1);
 	}
+#endif
 
 	return changed;
 }
@@ -256,7 +268,7 @@ bool waitForAck(byte destNodeId)
 			Serial.println(" notForMe");
 #endif
 			continue;
-		}
+	}
 
 		data.senderRssi = rssi;
 
@@ -270,21 +282,14 @@ bool waitForAck(byte destNodeId)
 			if (len == sizeof(DataAckPacket))
 			{
 				DataAckPacket* ackPacket = (DataAckPacket*)rf12_data;
-				//if (ackPacket->countCmd == CMD_Count)
-				//{
-					GasCounter_Value = ackPacket->count;
-					GasCounter_ValueReset = true;
+				GasCounter_Fraction = ackPacket->count % DEVIDER;
+				GasCounter_Value = ackPacket->count / DEVIDER;
+				GasCounter_Signal = 0;
+				GasCounter_ValueReset = true;
 #if defined(USESERIAL)
-					Serial.print(" cnt=");
-					Serial.print(GasCounter_Value, DEC);
+				Serial.print(" cnt=");
+				Serial.print(GasCounter_Value, DEC);
 #endif
-//				}
-//				else
-//				{
-//#if defined(USESERIAL2)
-//					Serial.print(" wrongAckCmd");
-//#endif
-//				}
 			}
 			else
 			{
@@ -306,7 +311,7 @@ bool waitForAck(byte destNodeId)
 	Serial.println(loops, DEC);
 #endif
 	return false;
-}
+		}
 
 bool sendTo(byte destNodeId, bool requestAck, void* data, byte datalen)
 {
@@ -383,7 +388,7 @@ void loop()
 	}
 
 	data.hall = GasCounter_HallValue;
-	data.signal = GasCounter_HallState;
+	data.signal = GasCounter_Signal;
 	data.count = GasCounter_Value;
 
 #if defined(USESERIAL)
@@ -438,8 +443,8 @@ void loop()
 
 	if (success)
 	{
-#if defined(LEDFLASHS)
-		flashLED(20, 1);
+#if defined(LED_SENDFLASHS)
+		flashLED(10, 1);
 #endif
 
 #if defined(USESERIAL)
@@ -450,8 +455,8 @@ void loop()
 	}
 	else
 	{
-#if defined(LEDFLASHS)
-		flashLED(100, 3);
+#if defined(LED_SENDFLASHS)
+		flashLED(50, 3);
 #endif
 
 #if defined(USESERIAL)
