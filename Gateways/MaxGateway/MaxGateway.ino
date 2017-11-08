@@ -38,6 +38,7 @@ struct _config
 	byte AutoAck;
 	byte PairMode;
 	byte CulMessages;
+	byte Cul868Compatibility;
 	byte EchoCommands;
 } config;
 
@@ -57,6 +58,7 @@ void loadConfig()
 		AutoAck = config.AutoAck;
 		PairMode = config.PairMode;
 		MAX_culMessages = config.CulMessages;
+		MAX_cul868Compatibility = config.Cul868Compatibility;
 		EchoCommands = config.EchoCommands;
 	}
 }
@@ -71,6 +73,7 @@ void saveConfig()
 	config.AutoAck = AutoAck;
 	config.PairMode = PairMode;
 	config.CulMessages = MAX_culMessages;
+	config.Cul868Compatibility = MAX_cul868Compatibility;
 	config.EchoCommands = EchoCommands;
 
 	eeprom_update_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
@@ -114,12 +117,13 @@ void printConfiguration()
 	printf_P(PSTR("RateBps: 10000\n"));
 	printf_P(PSTR("RssiThresholdDB: -%d\n"), RssiThreshold);
 	printf_P(PSTR("LED: %s\n"), (LEDenabled != 0) ? "on" : "off");
+	printf_P(PSTR("EchoCommands: %s\n"), (EchoCommands != 0) ? "on" : "off");
 	printf_P(PSTR("Trace: %s\n"), (MAX_tracePackets != 0) ? "on" : "off");
 	printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
 	printf_P(PSTR("AutoAck: %s\n"), (AutoAck != 0) ? "on" : "off");
 	printf_P(PSTR("PairMode: %s\n"), (PairMode != 0) ? "on" : "off");
 	printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
-	printf_P(PSTR("EchoCommands: %s\n"), (EchoCommands != 0) ? "on" : "off");
+	printf_P(PSTR("Cul868Compatibility: %s\n"), (MAX_cul868Compatibility != 0) ? "on" : "off");
 }
 
 const char helpText[] PROGMEM =
@@ -128,15 +132,16 @@ const char helpText[] PROGMEM =
 "h           .. this help\n"
 "v           .. print version and configuration\n"
 "e           .. echo commands (0=off, 1=on)\n"
-"<v>t        .. set RSSI threshold to -<v>dB\n"
+"<v>r        .. set RSSI threshold to -<v>dB\n"
 "<v>l        .. activity LED (0=off, 1=on)\n"
 "<v>x        .. packet tracing (0=off, 1=on)\n"
-"r           .. force reset\n"
+"Q           .. force reset\n"
 "\n"
 "ZaAAAAAA\\n .. set own address\n"
 "<v>a        .. auto ack (0=off, 1=on)\n"
 "<v>p        .. pair mode (0=off, 1=on)\n"
-"<v>c        .. CUL messages (0=off, 1=on)\n"
+"<v>m        .. CUL messages (0=off, 1=on)\n"
+"<v>c        .. CUL868 compatibility (0=off, 1=on)\n"
 "\n"
 "Zsllnnffccssssssddddddggpp...\\n  .. send with long preamble\n"
 "Zfllnnffccssssssddddddggpp...\\n  .. send with short preamble\n"
@@ -227,7 +232,7 @@ void handleInput(char c)
 		return;
 	}
 
-	if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'))
+	if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || (c == '?'))
 	{
 		if (pending && (top < (sizeof(stack) - 1)))
 		{
@@ -259,7 +264,7 @@ void handleInput(char c)
 		saveConfig();
 		break;
 
-	case 't':
+	case 'r':
 		RssiThreshold = stack[0];
 		setRssiThreshold();
 		printf_P(PSTR("RssiThresholdDB: -%d\n"), RssiThreshold);
@@ -290,13 +295,19 @@ void handleInput(char c)
 		saveConfig();
 		break;
 
-	case 'c':
+	case 'm':
 		MAX_culMessages = (stack[0] != 0) ? 1 : 0;
 		printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
 		saveConfig();
 		break;
 
-	case 'r':
+	case 'c':
+		MAX_cul868Compatibility = (stack[0] != 0) ? 1 : 0;
+		printf_P(PSTR("Cul868Compatibility: %s\n"), (MAX_cul868Compatibility != 0) ? "on" : "off");
+		saveConfig();
+		break;
+
+	case 'Q':
 		printf_P(PSTR("\nFORCED RESET ...\n"));
 		Reset();
 		break;
@@ -308,14 +319,22 @@ void handleInput(char c)
 	case 'V':
 		printf_P(PSTR("V 1.66 CUL868\n"));
 		break;
+	case 't':
+		printf_P(PSTR("00000064\n"));
+		break;
 	case 'X':
 		printf_P(PSTR("00 900\n"));
 		break;
 
 	// help is default
 	case 'h':
-	default:
 		printf_P(helpText);
+		break;
+
+	default:
+		if (MAX_cul868Compatibility == 0)
+			printf_P(helpText);
+		break;
 	}
 
 	value = top = pending = 0;
@@ -363,9 +382,27 @@ void handleHexInput(char c)
 
 		case 'a':
 		case 'A':
+			// ZaXXXXXX (set own address)
 			MAX_ownAddress = (((uint32_t)stack[0]) << 16) | (((uint32_t)stack[1]) << 8) | ((uint32_t)stack[2]);
-			printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
+			if (MAX_cul868Compatibility == 0)
+				printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
 			saveConfig();
+			break;
+
+		case 'r':
+		case 'R':
+			// Zr (temporary enable CUL messages)
+			MAX_culMessages = 1;
+			if (MAX_cul868Compatibility == 0)
+				printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
+			break;
+
+		case 'x':
+		case 'X':
+			// Zx (temporary disable CUL messages)
+			MAX_culMessages = 0;
+			if (MAX_cul868Compatibility == 0)
+				printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
 			break;
 		}
 
@@ -401,9 +438,12 @@ void setup()
 	fdev_setup_stream(&out, printChar, NULL, _FDEV_SETUP_WRITE);
 	stdout = &out;
 
-	printVersion();
-
 	loadConfig();
+	if (MAX_cul868Compatibility == 1)
+		MAX_culMessages = 0;
+
+	if (MAX_cul868Compatibility == 0)
+		printVersion();
 
 	MAX_Initialize();
 
@@ -434,7 +474,8 @@ void setup()
 	//// payload length (unlimited)
 	//RF69::control(0x38 | 0x80, 0x00);
 
-	printConfiguration();
+	if (MAX_cul868Compatibility == 0)
+		printConfiguration();
 
 	delay(1000);
 

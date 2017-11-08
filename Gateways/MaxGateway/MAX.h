@@ -7,6 +7,7 @@
 
 extern uint8_t MAX_tracePackets;
 extern uint8_t MAX_culMessages;
+extern uint8_t MAX_cul868Compatibility;
 extern uint32_t MAX_ownAddress;
 
 extern volatile uint32_t MAX_lastRXTXmillis;

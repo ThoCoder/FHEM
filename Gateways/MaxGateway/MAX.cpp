@@ -7,6 +7,7 @@
 
 uint8_t MAX_tracePackets = 0;
 uint8_t MAX_culMessages = 1;
+uint8_t MAX_cul868Compatibility = 0;
 uint32_t MAX_ownAddress = 0x123456;
 
 #define REG_FIFO            0x00
