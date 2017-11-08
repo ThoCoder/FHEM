@@ -6,7 +6,7 @@
 #include "MAX.h"
 #include "CRC16.h"
 
-#define VERSION "[ThoGateway::MAX! V1.0]"
+#define VERSION "[ThoGateway::MAX! V1.1]"
 
 #define LED_PIN 9
 #define LED_ON LOW
@@ -20,6 +20,7 @@ byte RssiThreshold = 110;
 byte nextMsgId = 1;
 byte AutoAck = 0;
 byte PairMode = 0;
+byte EchoCommands = 0;
 
 #define STACKSIZE 32
 unsigned long value;
@@ -37,6 +38,7 @@ struct _config
 	byte AutoAck;
 	byte PairMode;
 	byte CulMessages;
+	byte EchoCommands;
 } config;
 
 void loadConfig()
@@ -55,6 +57,7 @@ void loadConfig()
 		AutoAck = config.AutoAck;
 		PairMode = config.PairMode;
 		MAX_culMessages = config.CulMessages;
+		EchoCommands = config.EchoCommands;
 	}
 }
 
@@ -68,6 +71,7 @@ void saveConfig()
 	config.AutoAck = AutoAck;
 	config.PairMode = PairMode;
 	config.CulMessages = MAX_culMessages;
+	config.EchoCommands = EchoCommands;
 
 	eeprom_update_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
 }
@@ -115,6 +119,7 @@ void printConfiguration()
 	printf_P(PSTR("AutoAck: %s\n"), (AutoAck != 0) ? "on" : "off");
 	printf_P(PSTR("PairMode: %s\n"), (PairMode != 0) ? "on" : "off");
 	printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
+	printf_P(PSTR("EchoCommands: %s\n"), (EchoCommands != 0) ? "on" : "off");
 }
 
 const char helpText[] PROGMEM =
@@ -122,6 +127,7 @@ const char helpText[] PROGMEM =
 "Available commands:\n\n"
 "h           .. this help\n"
 "v           .. print version and configuration\n"
+"e           .. echo commands (0=off, 1=on)\n"
 "<v>t        .. set RSSI threshold to -<v>dB\n"
 "<v>l        .. activity LED (0=off, 1=on)\n"
 "<v>x        .. packet tracing (0=off, 1=on)\n"
@@ -229,12 +235,15 @@ void handleInput(char c)
 			value = pending = 0;
 		}
 
-		printf_P(PSTR("Command: "));
-		for (byte i = 0; i < top; i++)
+		if (EchoCommands == 1)
 		{
-			printf_P(PSTR("%d,"), stack[i]);
+			printf_P(PSTR("Command: "));
+			for (byte i = 0; i < top; i++)
+			{
+				printf_P(PSTR("%d,"), stack[i]);
+			}
+			printf_P(PSTR("%c\n"), c);
 		}
-		printf_P(PSTR("%c\n"), c);
 	}
 
 	switch (c)
@@ -242,6 +251,12 @@ void handleInput(char c)
 	case 'v':
 		printVersion();
 		printConfiguration();
+		break;
+
+	case 'e':
+		EchoCommands = (stack[0] != 0) ? 1 : 0;
+		printf_P(PSTR("EchoCommands: %s\n"), (EchoCommands != 0) ? "on" : "off");
+		saveConfig();
 		break;
 
 	case 't':
@@ -286,6 +301,18 @@ void handleInput(char c)
 		Reset();
 		break;
 
+	// fakes for FHEM CUL-module
+	case '?':
+		printf_P(PSTR("? (? is unknown) Use one of B b C F i A Z N k G M K U Y R T V W X e f m L l t u x\n"));
+		break;
+	case 'V':
+		printf_P(PSTR("V 1.66 CUL868\n"));
+		break;
+	case 'X':
+		printf_P(PSTR("00 900\n"));
+		break;
+
+	// help is default
 	case 'h':
 	default:
 		printf_P(helpText);
@@ -435,7 +462,8 @@ void loop()
 			while (Serial.available())
 				handleInput(Serial.read());
 
-			sendWakeups();
+			// shutter contact wake up tests
+			//sendWakeups();
 
 			if (MAX_recvDone() == 0)
 				continue;
@@ -480,13 +508,14 @@ void loop()
 			else if (AutoAck && (dst == MAX_ownAddress) &&
 				((cmd == MxM_ShutterContactState) ||
 				(cmd == MxM_SetTemperature) ||
-					(cmd == MxM_PushButtonState)))
+				(cmd == MxM_PushButtonState)))
 			{
 				delay(20);
 				MAX_send(true, msgId, 2, MxM_Ack, MAX_ownAddress, src, 0, &payloadOk, 1);
 			}
 
-			handleShutterContact(buf);
+			// shutter contact wake up tests
+			//handleShutterContact(buf);
 
 			activityLED(LED_OFF);
 		}

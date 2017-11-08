@@ -22,7 +22,7 @@
 #define BMP180_SDA 10
 #endif
 
-#define myNodeID 18
+#define myNodeID 23
 #define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
