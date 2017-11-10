@@ -21,7 +21,10 @@ byte nextMsgId = 1;
 byte AutoAck = 0;
 byte PairMode = 0;
 byte EchoCommands = 0;
+byte DebugLevel = 0;
 
+#define INPUTSIZE 128
+char line[INPUTSIZE], lineTop;
 #define STACKSIZE 32
 unsigned long value;
 byte stack[STACKSIZE], top, pending;
@@ -35,6 +38,7 @@ struct _config
 	byte LEDenabled;
 	byte Trace;
 	uint32_t OwnAddress;
+	uint32_t FakeWTAddress;
 	byte AutoAck;
 	byte PairMode;
 	byte CulMessages;
@@ -55,6 +59,7 @@ void loadConfig()
 		LEDenabled = config.LEDenabled;
 		MAX_tracePackets = config.Trace;
 		MAX_ownAddress = config.OwnAddress;
+		MAX_fakeWTAddress = config.FakeWTAddress;
 		AutoAck = config.AutoAck;
 		PairMode = config.PairMode;
 		MAX_culMessages = config.CulMessages;
@@ -70,6 +75,7 @@ void saveConfig()
 	config.LEDenabled = LEDenabled;
 	config.Trace = MAX_tracePackets;
 	config.OwnAddress = MAX_ownAddress;
+	config.FakeWTAddress = MAX_fakeWTAddress;
 	config.AutoAck = AutoAck;
 	config.PairMode = PairMode;
 	config.CulMessages = MAX_culMessages;
@@ -120,6 +126,7 @@ void printConfiguration()
 	printf_P(PSTR("EchoCommands: %s\n"), (EchoCommands != 0) ? "on" : "off");
 	printf_P(PSTR("Trace: %s\n"), (MAX_tracePackets != 0) ? "on" : "off");
 	printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
+	printf_P(PSTR("FakeWTAddress: %06lX\n"), MAX_fakeWTAddress);
 	printf_P(PSTR("AutoAck: %s\n"), (AutoAck != 0) ? "on" : "off");
 	printf_P(PSTR("PairMode: %s\n"), (PairMode != 0) ? "on" : "off");
 	printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
@@ -138,10 +145,11 @@ const char helpText[] PROGMEM =
 "Q           .. force reset\n"
 "\n"
 "ZaAAAAAA\\n .. set own address\n"
+"ZwAAAAAA\\n .. set fake WT address\n"
 "<v>a        .. auto ack (0=off, 1=on)\n"
 "<v>p        .. pair mode (0=off, 1=on)\n"
 "<v>m        .. CUL messages (0=off, 1=on)\n"
-"<v>c        .. CUL868 compatibility (0=off, 1=on)\n"
+"<v>c        .. CUL868 compatibility (0=off, 1=on). c00 [ENTER] to leave this mode.\n"
 "\n"
 "Zsllnnffccssssssddddddggpp...\\n  .. send with long preamble\n"
 "Zfllnnffccssssssddddddggpp...\\n  .. send with short preamble\n"
@@ -160,29 +168,36 @@ char hexSubCmd = 0;
 
 void handleInput(char c)
 {
+	// check for CUL compatible I/O mode
 	if (hexCmd != 0)
 	{
 		handleHexInput(c);
 		return;
 	}
 
-	if (top == 0)
-	{
-		switch (c)
-		{
-		case 'Z':
-		case 'z':
-			pending = 0;
-			hexCmd = c;
-			return;
-		}
-	}
-
+	// new line chars clear input buffer
 	if (c == '\r' || c == '\n')
 	{
 		value = top = pending = 0;
-		printf_P(PSTR("\n"));
+
+		if (MAX_cul868Compatibility == 0)
+			printf_P(PSTR("\n"));
 		return;
+	}
+
+	// check to start CUL compatible I/O mode
+	if (top == 0)
+	{
+		if ((MAX_cul868Compatibility == 1) || (c == 'Z'))
+		{
+			memset(line, 0, INPUTSIZE);
+			lineTop = 0;
+			line[lineTop++] = c;
+
+			hexCmd = c;
+			pending = 0;
+			return;
+		}
 	}
 
 	if (('0' <= c) && (c <= '9'))
@@ -232,7 +247,7 @@ void handleInput(char c)
 		return;
 	}
 
-	if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || (c == '?'))
+	if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'))
 	{
 		if (pending && (top < (sizeof(stack) - 1)))
 		{
@@ -312,21 +327,6 @@ void handleInput(char c)
 		Reset();
 		break;
 
-	// fakes for FHEM CUL-module
-	case '?':
-		printf_P(PSTR("? (? is unknown) Use one of B b C F i A Z N k G M K U Y R T V W X e f m L l t u x\n"));
-		break;
-	case 'V':
-		printf_P(PSTR("V 1.66 CUL868\n"));
-		break;
-	case 't':
-		printf_P(PSTR("00000064\n"));
-		break;
-	case 'X':
-		printf_P(PSTR("00 900\n"));
-		break;
-
-	// help is default
 	case 'h':
 		printf_P(helpText);
 		break;
@@ -342,10 +342,23 @@ void handleInput(char c)
 
 void handleHexInput(char c)
 {
-	if (hexSubCmd == 0)
+	if ((c != '\r') && (c != '\n'))
 	{
-		hexSubCmd = c;
-		return;
+		if (lineTop < (INPUTSIZE - 1))
+		{
+			line[lineTop++] = c;
+		}
+
+		if (hexSubCmd == 0)
+		{
+			switch (hexCmd)
+			{
+			case 'Z':
+			case 'A':
+				hexSubCmd = c;
+				return;
+			}
+		}
 	}
 
 	if (('0' <= c) && (c <= '9'))
@@ -362,49 +375,75 @@ void handleHexInput(char c)
 	}
 	else if (c == '\r' || c == '\n')
 	{
-		switch (hexSubCmd)
+		bool handled = false;
+
+		switch (hexCmd)
 		{
-		case 's':
-		case 'S':
-			// Zsllnnffccssssssddddddggpp...
-			if (top < 11)
-				break;
-			MAX_send(false, stack + 1, 10, stack + 11, top - 11);
+		case 'Z':
+			handled = HandleHexCommandZ();
+			break;
+		
+		// fakes for FHEM CUL-module (rfmode == MAX)
+		case 'V':
+			printf_P(PSTR("V 1.66 CUL868\n"));
+			handled = true;
 			break;
 
-		case 'f':
-		case 'F':
-			// Zfllnnffccssssssddddddggpp...
-			if (top < 11)
-				break;
-			MAX_send(true, stack + 1, 10, stack + 11, top - 11);
+		case 't':
+			printf_P(PSTR("%08X\n"), millis()/8);
+			handled = true;
 			break;
 
-		case 'a':
-		case 'A':
-			// ZaXXXXXX (set own address)
-			MAX_ownAddress = (((uint32_t)stack[0]) << 16) | (((uint32_t)stack[1]) << 8) | ((uint32_t)stack[2]);
-			if (MAX_cul868Compatibility == 0)
-				printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
-			saveConfig();
-			break;
-
-		case 'r':
-		case 'R':
-			// Zr (temporary enable CUL messages)
-			MAX_culMessages = 1;
-			if (MAX_cul868Compatibility == 0)
-				printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
-			break;
-
-		case 'x':
 		case 'X':
-			// Zx (temporary disable CUL messages)
-			MAX_culMessages = 0;
-			if (MAX_cul868Compatibility == 0)
-				printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
+			if (top > 0)
+			{
+				DebugLevel = stack[0];
+			}
+			else
+			{
+				printf_P(PSTR("%02X 900\n"), DebugLevel);
+			}
+			handled = true;
+			break;
+
+		case 'T':
+			if ((top > 0) && (stack[0] == 1))
+			{
+				printf_P(PSTR("1234\n"));
+				handled = true;
+			}
+			break;
+
+		case 'A':
+			if (hexSubCmd == 'x')
+			{
+				handled = true;
+			}
+			break;
+
+		// private commands
+		// enter "c00" to leave CUL compatibility mode
+		case 'c':
+			MAX_cul868Compatibility = (stack[0] != 0) ? 1 : 0;
+			printf_P(PSTR("Cul868Compatibility: %s\n"), (MAX_cul868Compatibility != 0) ? "on" : "off");
+			saveConfig();
+			handled = true;
+			break;
+
+		case 'v':
+			printVersion();
+			printConfiguration();
+			handled = true;
+			break;
+
+		case 'h':
+			printf_P(helpText);
+			handled = true;
 			break;
 		}
+
+		if(!handled)
+			printf_P(PSTR("? (%s is unknown) Use one of B b C F i A Z N k G M K U Y R T V W X e f m L l t u x\n"), line);
 
 		hexCmd = hexSubCmd = 0;
 		value = top = pending = 0;
@@ -427,6 +466,72 @@ void handleHexInput(char c)
 	}
 }
 
+bool HandleHexCommandZ()
+{
+	bool handled = false;
+
+	switch (hexSubCmd)
+	{
+	case 's':
+		// Zsllnnffccssssssddddddggpp...
+		if (top < 11)
+			break;
+		MAX_send(false, stack + 1, 10, stack + 11, top - 11);
+		handled = true;
+		break;
+
+	case 'f':
+		// Zfllnnffccssssssddddddggpp...
+		if (top < 11)
+			break;
+		MAX_send(true, stack + 1, 10, stack + 11, top - 11);
+		handled = true;
+		break;
+
+	case 'a':
+		// ZaXXXXXX (set auto ack address)
+		MAX_ownAddress = (((uint32_t)stack[0]) << 16) | (((uint32_t)stack[1]) << 8) | ((uint32_t)stack[2]);
+		if (MAX_cul868Compatibility == 0)
+			printf_P(PSTR("OwnAddress: %06lX\n"), MAX_ownAddress);
+		saveConfig();
+		handled = true;
+		break;
+
+	case 'w':
+		// ZwXXXXXX (set fake WT address)
+		MAX_fakeWTAddress = (((uint32_t)stack[0]) << 16) | (((uint32_t)stack[1]) << 8) | ((uint32_t)stack[2]);
+		if (MAX_cul868Compatibility == 0)
+			printf_P(PSTR("FakeWTAddress: %06lX\n"), MAX_fakeWTAddress);
+		handled = true;
+		break;
+
+	case 'r':
+		// Zr (temporary enable CUL messages)
+		MAX_culMessages = 1;
+		if (MAX_cul868Compatibility == 1)
+			AutoAck = config.AutoAck;
+
+		if (MAX_cul868Compatibility == 0)
+			printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
+
+		handled = true;
+		break;
+
+	case 'x':
+		// Zx (temporary disable CUL messages)
+		MAX_culMessages = 0;
+		if (MAX_cul868Compatibility == 1)
+			AutoAck = 0;
+
+		if (MAX_cul868Compatibility == 0)
+			printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
+		handled = true;
+		break;
+	}
+
+	return handled;
+}
+
 void setup()
 {
 	wdt_enable(WDTO_8S);
@@ -440,7 +545,10 @@ void setup()
 
 	loadConfig();
 	if (MAX_cul868Compatibility == 1)
+	{
 		MAX_culMessages = 0;
+		AutoAck = 0;
+	}
 
 	if (MAX_cul868Compatibility == 0)
 		printVersion();
@@ -532,7 +640,11 @@ void loop()
 				{
 					printf_P(PSTR("%02X"), buf[i]);
 				}
-				printf_P(PSTR("%02X\n"), MAX_rssi >> 1);
+
+				if(MAX_cul868Compatibility == 1)
+					printf_P(PSTR("%02X\n"), (byte)(148 - MAX_rssi));
+				else
+					printf_P(PSTR("%02X\n"), MAX_rssi >> 1);
 			}
 
 			uint8_t cmd = MxP_Cmd(buf);
@@ -553,6 +665,12 @@ void loop()
 			{
 				delay(20);
 				MAX_send(true, msgId, 2, MxM_Ack, MAX_ownAddress, src, 0, &payloadOk, 1);
+			}
+			else if (AutoAck && (dst == MAX_fakeWTAddress) &&
+				(cmd == MxM_SetTemperature))
+			{
+				delay(20);
+				MAX_send(true, msgId, 2, MxM_Ack, MAX_fakeWTAddress, src, 0, &payloadOk, 1);
 			}
 
 			// shutter contact wake up tests

@@ -9,6 +9,7 @@ uint8_t MAX_tracePackets = 0;
 uint8_t MAX_culMessages = 1;
 uint8_t MAX_cul868Compatibility = 0;
 uint32_t MAX_ownAddress = 0x123456;
+uint32_t MAX_fakeWTAddress = 0x333333;
 
 #define REG_FIFO            0x00
 #define REG_OPMODE          0x01
@@ -387,7 +388,7 @@ void MAX_send(bool fast, const uint8_t* header, uint8_t headerLength, const uint
 
 	if (MAX_culMessages != 0)
 	{
-		printf_P(PSTR("Z%c%02X"), fast ? 'f' : 's', headerLength + payloadLength);
+		printf_P(PSTR("Z%02X"), headerLength + payloadLength);
 		for (uint8_t h = 0; h < headerLength; h++)
 			printf_P(PSTR("%02X"), header[h]);
 		for (uint8_t p = 0; p < payloadLength; p++)
