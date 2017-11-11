@@ -13,15 +13,17 @@
 #define LED_OFF HIGH
 byte LEDenabled = 1;
 
-#define LOOP_TIMEOUT_INTERVAL 59000
-#define RECEIVEWATCHDOGLOOPS 6
-
 byte RssiThreshold = 110;
 byte nextMsgId = 1;
 byte AutoAck = 0;
 byte PairMode = 0;
 byte EchoCommands = 0;
 byte DebugLevel = 0;
+
+uint32_t LastRxMillis = 0;
+uint32_t CurrentRxGapMSec = 0;
+uint32_t MaxRxGapMSec = 0;
+uint32_t WatchdogTimeoutMSec = 3600000;
 
 #define INPUTSIZE 128
 char line[INPUTSIZE], lineTop;
@@ -44,6 +46,7 @@ struct _config
 	byte CulMessages;
 	byte Cul868Compatibility;
 	byte EchoCommands;
+	uint32_t WatchdogTimeoutMSec;
 } config;
 
 void loadConfig()
@@ -65,6 +68,7 @@ void loadConfig()
 		MAX_culMessages = config.CulMessages;
 		MAX_cul868Compatibility = config.Cul868Compatibility;
 		EchoCommands = config.EchoCommands;
+		WatchdogTimeoutMSec = config.WatchdogTimeoutMSec;
 	}
 }
 
@@ -81,6 +85,7 @@ void saveConfig()
 	config.CulMessages = MAX_culMessages;
 	config.Cul868Compatibility = MAX_cul868Compatibility;
 	config.EchoCommands = EchoCommands;
+	config.WatchdogTimeoutMSec = WatchdogTimeoutMSec;
 
 	eeprom_update_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
 }
@@ -131,6 +136,14 @@ void printConfiguration()
 	printf_P(PSTR("PairMode: %s\n"), (PairMode != 0) ? "on" : "off");
 	printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
 	printf_P(PSTR("Cul868Compatibility: %s\n"), (MAX_cul868Compatibility != 0) ? "on" : "off");
+	printf_P(PSTR("WatchdogTimeoutMSec: %ld\n"), WatchdogTimeoutMSec);
+}
+
+void printStatistics()
+{
+	printf_P(PSTR("CurrentRxGapMSec: %ld\n"), CurrentRxGapMSec);
+	printf_P(PSTR("MaxRxGapMSec: %ld\n"), MaxRxGapMSec);
+	printf_P(PSTR("WatchdogTimeoutMSec: %ld\n"), WatchdogTimeoutMSec);
 }
 
 const char helpText[] PROGMEM =
@@ -138,10 +151,12 @@ const char helpText[] PROGMEM =
 "Available commands:\n\n"
 "h           .. this help\n"
 "v           .. print version and configuration\n"
-"e           .. echo commands (0=off, 1=on)\n"
+"s           .. print staticstics\n"
+"<v>e        .. echo commands (0=off, 1=on)\n"
 "<v>r        .. set RSSI threshold to -<v>dB\n"
 "<v>l        .. activity LED (0=off, 1=on)\n"
 "<v>x        .. packet tracing (0=off, 1=on)\n"
+"<v>w        .. Watchdog timeout (in minutes)\n"
 "Q           .. force reset\n"
 "\n"
 "ZaAAAAAA\\n .. set own address\n"
@@ -273,6 +288,10 @@ void handleInput(char c)
 		printConfiguration();
 		break;
 
+	case 's':
+		printStatistics();
+		break;
+
 	case 'e':
 		EchoCommands = (stack[0] != 0) ? 1 : 0;
 		printf_P(PSTR("EchoCommands: %s\n"), (EchoCommands != 0) ? "on" : "off");
@@ -319,6 +338,12 @@ void handleInput(char c)
 	case 'c':
 		MAX_cul868Compatibility = (stack[0] != 0) ? 1 : 0;
 		printf_P(PSTR("Cul868Compatibility: %s\n"), (MAX_cul868Compatibility != 0) ? "on" : "off");
+		saveConfig();
+		break;
+
+	case 'w':
+		WatchdogTimeoutMSec = (uint32_t)stack[0] * 60000UL;
+		printf_P(PSTR("WatchdogTimeoutMSec: %ld\n"), WatchdogTimeoutMSec);
 		saveConfig();
 		break;
 
@@ -436,10 +461,29 @@ void handleHexInput(char c)
 			handled = true;
 			break;
 
+		case 's':
+			printStatistics();
+			handled = true;
+			break;
+
 		case 'h':
 			printf_P(helpText);
 			handled = true;
 			break;
+
+		case 'w':
+			WatchdogTimeoutMSec = (uint32_t)stack[0] * 60000UL;
+			printf_P(PSTR("WatchdogTimeoutMSec: %ld\n"), WatchdogTimeoutMSec);
+			saveConfig();
+			handled = true;
+			break;
+
+		case 'Q':
+			printf_P(PSTR("\nFORCED RESET ...\n"));
+			Reset();
+			handled = true;
+			break;
+
 		}
 
 		if(!handled)
@@ -508,8 +552,7 @@ bool HandleHexCommandZ()
 	case 'r':
 		// Zr (temporary enable CUL messages)
 		MAX_culMessages = 1;
-		if (MAX_cul868Compatibility == 1)
-			AutoAck = config.AutoAck;
+		AutoAck = 1;
 
 		if (MAX_cul868Compatibility == 0)
 			printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
@@ -520,8 +563,7 @@ bool HandleHexCommandZ()
 	case 'x':
 		// Zx (temporary disable CUL messages)
 		MAX_culMessages = 0;
-		if (MAX_cul868Compatibility == 1)
-			AutoAck = 0;
+		AutoAck = 0;
 
 		if (MAX_cul868Compatibility == 0)
 			printf_P(PSTR("CulMessages: %s\n"), (MAX_culMessages != 0) ? "on" : "off");
@@ -544,43 +586,11 @@ void setup()
 	stdout = &out;
 
 	loadConfig();
-	if (MAX_cul868Compatibility == 1)
-	{
-		MAX_culMessages = 0;
-		AutoAck = 0;
-	}
 
 	if (MAX_cul868Compatibility == 0)
 		printVersion();
 
 	MAX_Initialize();
-
-	//rf12_initialize(NODEID, RF12_868MHZ, NETWORK);
-	//// BitRate 10k
-	//RF69::control(0x03 | 0x80, 0x0C);
-	//RF69::control(0x04 | 0x80, 0x80);
-	//// deviation 20khz
-	//RF69::control(0x05 | 0x80, 0x01);
-	//RF69::control(0x06 | 0x80, 0x48);
-	//// frequency 868.3 MHz
-	//RF69::control(0x07 | 0x80, 0xD9);
-	//RF69::control(0x08 | 0x80, 0x13);
-	//RF69::control(0x09 | 0x80, 0x33);
-	//// RSSI threshold -100dB
-	//RF69::control(0x29 | 0x80, RssiThreshold << 1);
-	//// TX preamble (short=3 long=1250=1s)
-	//RF69::control(0x2C | 0x80, 0x04);
-	//RF69::control(0x2D | 0x80, 0xE2);
-	//// sync word 4 bytes (C6 26 C6 26)
-	//RF69::control(0x2E | 0x80, 0x98);
-	//RF69::control(0x2F | 0x80, 0xC6);
-	//RF69::control(0x30 | 0x80, 0x26);
-	//RF69::control(0x31 | 0x80, 0xC6);
-	//RF69::control(0x32 | 0x80, 0x26);
-	//// packet config (fixed length, no whitening/manchester, no crc)
-	//RF69::control(0x37 | 0x80, 0x00);
-	//// payload length (unlimited)
-	//RF69::control(0x38 | 0x80, 0x00);
 
 	if (MAX_cul868Compatibility == 0)
 		printConfiguration();
@@ -599,93 +609,97 @@ byte awake = 0;
 
 void loop()
 {
-	int msgCount = 0;
+	LastRxMillis = millis();
+	MaxRxGapMSec = CurrentRxGapMSec = 0;
 
-	for (byte watchdogLoops = 0; watchdogLoops < RECEIVEWATCHDOGLOOPS; watchdogLoops++)
+	while (true)
 	{
-		MilliTimer loopTimer;
-		while (!loopTimer.poll(LOOP_TIMEOUT_INTERVAL))
+		wdt_reset();
+
+		while (Serial.available())
+			handleInput(Serial.read());
+
+		// shutter contact wake up tests
+		//sendWakeups();
+
+		uint32_t t = millis();
+		CurrentRxGapMSec = t - LastRxMillis;
+		if (CurrentRxGapMSec >= WatchdogTimeoutMSec)
 		{
-			wdt_reset();
-
-			while (Serial.available())
-				handleInput(Serial.read());
-
-			// shutter contact wake up tests
-			//sendWakeups();
-
-			if (MAX_recvDone() == 0)
-				continue;
-
-			uint8_t buf[MAX_BUFLEN];
-			uint8_t buf_fill = MAX_rxfill;
-			for (uint8_t i = 0; i < buf_fill; i++)
-				buf[i] = MAX_buf[i];
-			uint8_t len = buf[0];
-			uint16_t crc = MAX_crc;
-			uint8_t rssi = MAX_rssi >> 1;
-
-			if (crc != 0)
-				continue;
-
-			MAX_recvDone();
-
-			msgCount++;
-			activityLED(LED_ON);
-
-			if (MAX_culMessages != 0)
-			{
-				printf_P(PSTR("Z"));
-				for (int i = 0; i < buf_fill - 2; i++)
-				{
-					printf_P(PSTR("%02X"), buf[i]);
-				}
-
-				if(MAX_cul868Compatibility == 1)
-					printf_P(PSTR("%02X\n"), (byte)(148 - MAX_rssi));
-				else
-					printf_P(PSTR("%02X\n"), MAX_rssi >> 1);
-			}
-
-			uint8_t cmd = MxP_Cmd(buf);
-			uint8_t msgId = MxP_MsgId(buf);
-			uint32_t src = MxP_Src(buf);
-			uint32_t dst = MxP_Dst(buf);
-			uint8_t payloadOk = 0;
-
-			if (PairMode && (cmd == MxM_PairPing))
-			{
-				delay(20);
-				MAX_send(true, msgId, 0, MxM_PairPong, MAX_ownAddress, src, 0, &payloadOk, 1);
-			}
-			else if (AutoAck && (dst == MAX_ownAddress) &&
-				((cmd == MxM_ShutterContactState) ||
-				(cmd == MxM_SetTemperature) ||
-				(cmd == MxM_PushButtonState)))
-			{
-				delay(20);
-				MAX_send(true, msgId, 2, MxM_Ack, MAX_ownAddress, src, 0, &payloadOk, 1);
-			}
-			else if (AutoAck && (dst == MAX_fakeWTAddress) &&
-				(cmd == MxM_SetTemperature))
-			{
-				delay(20);
-				MAX_send(true, msgId, 2, MxM_Ack, MAX_fakeWTAddress, src, 0, &payloadOk, 1);
-			}
-
-			// shutter contact wake up tests
-			//handleShutterContact(buf);
-
-			activityLED(LED_OFF);
+			printf_P(PSTR("\nRESET DUE TO MESSAGE TIMEOUT ...\n"));
+			Reset();
+			// Reset() does not return, Watchdog reset after 2s
 		}
-	}
 
-	if (msgCount == 0)
-	{
-		printf_P(PSTR("\nRESET DUE TO MESSAGE TIMEOUT ...\n"));
-		Reset();
+		if (MAX_recvDone() == 0)
+			continue;
+
+		uint8_t buf[MAX_BUFLEN];
+		uint8_t buf_fill = MAX_rxfill;
+		for (uint8_t i = 0; i < buf_fill; i++)
+			buf[i] = MAX_buf[i];
+		uint8_t len = buf[0];
+		uint16_t crc = MAX_crc;
+		uint8_t rssi = MAX_rssi >> 1;
+
+		if (crc != 0)
+			continue;
+
+		MAX_recvDone();
+
+		activityLED(LED_ON);
+
+		LastRxMillis = t;
+		if (CurrentRxGapMSec > MaxRxGapMSec)
+			MaxRxGapMSec = CurrentRxGapMSec;
+
+		if (MAX_culMessages != 0)
+		{
+			printf_P(PSTR("Z"));
+			for (int i = 0; i < buf_fill - 2; i++)
+			{
+				printf_P(PSTR("%02X"), buf[i]);
+			}
+
+			if (MAX_cul868Compatibility == 1)
+				printf_P(PSTR("%02X\n"), (byte)(148 - MAX_rssi));
+			else
+				printf_P(PSTR("%02X\n"), MAX_rssi >> 1);
+		}
+
+		uint8_t cmd = MxP_Cmd(buf);
+		uint8_t msgId = MxP_MsgId(buf);
+		uint32_t src = MxP_Src(buf);
+		uint32_t dst = MxP_Dst(buf);
+		uint8_t payloadOk = 0;
+
+		if (PairMode && (cmd == MxM_PairPing))
+		{
+			delay(20);
+			MAX_send(true, msgId, 0, MxM_PairPong, MAX_ownAddress, src, 0, &payloadOk, 1);
+		}
+		else if (AutoAck && (dst == MAX_ownAddress) &&
+			((cmd == MxM_ShutterContactState) ||
+			(cmd == MxM_SetTemperature) ||
+				(cmd == MxM_PushButtonState)))
+		{
+			delay(20);
+			MAX_send(true, msgId, 2, MxM_Ack, MAX_ownAddress, src, 0, &payloadOk, 1);
+		}
+		else if (AutoAck && (dst == MAX_fakeWTAddress) &&
+			(cmd == MxM_SetTemperature))
+		{
+			delay(20);
+			MAX_send(true, msgId, 2, MxM_Ack, MAX_fakeWTAddress, src, 0, &payloadOk, 1);
+		}
+
+		// shutter contact wake up tests
+		//handleShutterContact(buf);
+
+		activityLED(LED_OFF);
 	}
 }
+
 
 void sendWakeup(uint32_t dstAddress, uint8_t wakeTimeout)
 {
