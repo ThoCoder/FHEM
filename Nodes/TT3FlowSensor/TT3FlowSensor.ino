@@ -1,4 +1,4 @@
-#define USESERIAL
+//#define USESERIAL
 //#define USESERIAL2
 #define LED_SENDFLASHS
 
@@ -6,7 +6,7 @@
 #include <JeeLib.h>
 
 #define LED 7
-#define SENSOR_PIN 1//9
+#define SENSOR_PIN 9
 #define SENSOR_POWER 10
 
 #define myNodeID 22
@@ -20,10 +20,12 @@
 #define COUNTSPERLITRE 10300
 #define PULSETIMEOUT 1000
 
-// set counter (RF12Demo V12.1):            195,nnnnnnD10m
-// set counter (ThoGateway::JeeLink V2.1):  10,195,nnnnnnDm
+// set counter (RF12Demo V12.1):            195,nnnnnnD22m
+// set counter (ThoGateway::JeeLink V2.1):  22,195,nnnnnnDm
 // nnnnnn .. flow counter value to set in (10300/L) units
-
+//
+// reset day counter (ThoGateway::JeeLink V2.1): 22,189,0Dm
+//
 byte FlowCounter_State = 0;
 uint32_t FlowCounter_Value = 0;
 uint32_t FlowCounter_ValueTick = 0;
@@ -33,11 +35,13 @@ uint32_t FlowCounter_dValue0 = 0;
 uint32_t FlowCounter_dQ = 0;
 uint32_t FlowCounter_dayValue0 = 0;
 uint32_t FlowCounter_dayQ = 0;
+uint32_t FlowCounter_yesterdayQ = 0;
 
 #define CMD_Count 195
-#define CMD_VolumeML 191
+#define CMD_TotalVolumeML 191
 #define CMD_DeltaVolumeML 190
-#define CMD_DayVolumeML 189
+#define CMD_TodayVolumeML 189
+#define CMD_YesterdayVolumeML 188
 #define CMD_PowerSupply 252
 #define CMD_SenderRSSI 196
 
@@ -49,8 +53,10 @@ struct DataPacket
 	uint32_t totalVolumeML;	// total volume in ml (count * 1000 / COUNTSPERLITRE)
 	byte deltaVolumeCmd;
 	uint32_t deltaVolumeML;	// delta volume in ml since last pump operation
-	byte dayVolumeCmd;
-	uint32_t dayVolumeML; // day counter
+	byte todayVolumeCmd;
+	uint32_t todayVolumeML; // day counter
+	byte yesterdayVolumeCmd;
+	uint32_t yesterdayVolumeML; // previous day counter value
 	byte powerCmd;
 	uint16_t power;		// mV * 10
 	byte senderRssiCmd;
@@ -59,9 +65,10 @@ struct DataPacket
 	DataPacket()
 	{
 		countCmd = CMD_Count;
-		totalVolumeCmd = CMD_VolumeML;
+		totalVolumeCmd = CMD_TotalVolumeML;
 		deltaVolumeCmd = CMD_DeltaVolumeML;
-		dayVolumeCmd = CMD_DayVolumeML;
+		todayVolumeCmd = CMD_TodayVolumeML;
+		yesterdayVolumeCmd = CMD_YesterdayVolumeML;
 		powerCmd = CMD_PowerSupply;
 		senderRssiCmd = CMD_SenderRSSI;
 	}
@@ -69,8 +76,9 @@ struct DataPacket
 
 struct DataAckPacket
 {
-	byte countCmd;
-	uint32_t count;		// 10300 = 1L, 0xFFFFFFFF means day counter reset
+	byte countCmd;		// CMD_Count to set counter (10300 = 1L)
+						// CMD_TodayVolumeML to reset day counter
+	uint32_t count;
 };
 
 DataPacket data;
@@ -141,7 +149,7 @@ bool waitForAck(byte destNodeId)
 			Serial.println(" err");
 #endif
 			continue;
-		}
+	}
 
 #if defined(USESERIAL2)
 		Serial.print(" ok hdr=");
@@ -177,18 +185,23 @@ bool waitForAck(byte destNodeId)
 					FlowCounter_Value += dv;
 					FlowCounter_dValue0 += dv;
 					FlowCounter_dayValue0 += dv;
+#if defined(USESERIAL)
+					Serial.print(" cnt=");
+					Serial.print(FlowCounter_Value, DEC);
+#endif
 					break;
 
 					// day value reset
-				case CMD_DayVolumeML:
+				case CMD_TodayVolumeML:
+					FlowCounter_yesterdayQ = FlowCounter_dayQ;
+					FlowCounter_dayQ = 0;
 					FlowCounter_dayValue0 = FlowCounter_Value;
+#if defined(USESERIAL)
+					Serial.print(" today=");
+					Serial.print(FlowCounter_yesterdayQ, DEC);
+#endif
 					break;
 				}
-
-#if defined(USESERIAL)
-				Serial.print(" cnt=");
-				Serial.print(FlowCounter_Value, DEC);
-#endif
 			}
 			else
 			{
@@ -270,27 +283,28 @@ bool UpdateFlowCounterState()
 #endif
 			// start counting
 			FlowCounter_Running = 1;
-		}
-		else
+	}
+}
+
+	if (FlowCounter_Running == 1)
+	{
+		uint32_t dt = t - FlowCounter_ValueTick;
+
+		if (dt >= PULSETIMEOUT)
 		{
-			uint32_t dt = t - FlowCounter_ValueTick;
-
-			if (dt >= PULSETIMEOUT)
-			{
 #if defined(USESERIAL)
-				Serial.println("PUMP OFF");
+			Serial.println("PUMP OFF");
 #endif
-				// stop counting
-				FlowCounter_Running = 0;
-				pumpStopped = true;
+			// stop counting
+			FlowCounter_Running = 0;
+			pumpStopped = true;
 
-				FlowCounter_Q = FlowCounter_Value * 1000 / COUNTSPERLITRE;
-				FlowCounter_dQ = (FlowCounter_Value - FlowCounter_dValue0) * 1000 / COUNTSPERLITRE;
-				FlowCounter_dayQ = (FlowCounter_Value - FlowCounter_dayValue0) * 1000 / COUNTSPERLITRE;
+			FlowCounter_Q = FlowCounter_Value * 1000 / COUNTSPERLITRE;
+			FlowCounter_dQ = (FlowCounter_Value - FlowCounter_dValue0) * 1000 / COUNTSPERLITRE;
+			FlowCounter_dayQ = (FlowCounter_Value - FlowCounter_dayValue0) * 1000 / COUNTSPERLITRE;
 
-				FlowCounter_dValue0 = FlowCounter_Value;
-			}
-		}
+			FlowCounter_dValue0 = FlowCounter_Value;
+	}
 	}
 
 	return pumpStopped;
@@ -336,7 +350,8 @@ void loop()
 	data.count = FlowCounter_Value;
 	data.totalVolumeML = FlowCounter_Q;
 	data.deltaVolumeML = FlowCounter_dQ;
-	data.dayVolumeML = FlowCounter_dayQ;
+	data.todayVolumeML = FlowCounter_dayQ;
+	data.yesterdayVolumeML = FlowCounter_yesterdayQ;
 
 #if defined(USESERIAL)
 	Serial.println("MEASURE VCC ...");
@@ -347,7 +362,8 @@ void loop()
 	Serial.print(" C="); Serial.print(data.count, DEC);
 	Serial.print(" Q="); Serial.print(data.totalVolumeML, DEC);
 	Serial.print(" dQ="); Serial.print(data.deltaVolumeML, DEC);
-	Serial.print(" dayQ="); Serial.print(data.dayVolumeML, DEC);
+	Serial.print(" dayQ="); Serial.print(data.todayVolumeML, DEC);
+	Serial.print(" yesterdayQ="); Serial.print(data.yesterdayVolumeML, DEC);
 	Serial.print(" V="); Serial.print(data.power, DEC);
 	Serial.print(" RSSI(-"); Serial.print(data.senderRssi, DEC); Serial.print(")");
 	Serial.println();
