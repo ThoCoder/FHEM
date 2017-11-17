@@ -15,33 +15,45 @@
 #define ACK_TIME 50
 #define RETRYDELAY 500
 #define RETRIES 5
-#define WAITTIMEOUT 300000
+#define WAITTIMEOUT_INIT 10000
+#define WAITTIMEOUT_LONG 300000
+#define WAITTIMEOUT_SHORT 60000
 
 #define COUNTSPERLITRE 10300
 #define PULSETIMEOUT 1000
 
-// set counter (RF12Demo V12.1):            195,nnnnnnD22m
-// set counter (ThoGateway::JeeLink V2.1):  22,195,nnnnnnDm
-// nnnnnn .. flow counter value to set in (10300/L) units
-//
-// reset day counter (ThoGateway::JeeLink V2.1): 22,189,0Dm
-//
-byte FlowCounter_State = 0;
-uint32_t FlowCounter_Value = 0;
-uint32_t FlowCounter_ValueTick = 0;
-uint32_t FlowCounter_Running = 0;
-uint32_t FlowCounter_Q = 0; // millilitre (1000 * FlowCounter_Value / COUNTSPERLITRE)
-uint32_t FlowCounter_dValue0 = 0;
-uint32_t FlowCounter_dQ = 0;
-uint32_t FlowCounter_dayValue0 = 0;
-uint32_t FlowCounter_dayQ = 0;
-uint32_t FlowCounter_yesterdayQ = 0;
+bool triggerSend = false;
+uint32_t waitTimeout = WAITTIMEOUT_INIT;
+
+// ThoGateway::JeeLink V2.1
+//   reset day counter : <nodeID>,189,0Dm
+//   set counter       : <nodeID>,195,nnnnnnDm
+//                       nnnnnn .. counter value to set in (10300/L) units
+
+// all volume values are in ml calculated from counter values 
+//   volume = 1000 * counter / COUNTSPERLITRE)
+
+// Q values in ml/min (volumetric flow rate)
+
+byte fsState = 0;
+uint32_t fsCounter = 0;
+uint32_t fsCounterTick = 0;
+uint32_t fsCounterRunning = 0;
+uint32_t fsCounterStartTick = 0;
+uint32_t fsTotalVolume = 0;
+uint32_t fsDeltaCounter0 = 0;
+uint32_t fsDeltaVolume = 0;
+uint32_t fsQ = 0;
+uint32_t fsTodayCounter0 = 0;
+uint32_t fsTodayVolume = 0;
+uint32_t fsYesterdayVolume = 0;
 
 #define CMD_Count 195
-#define CMD_TotalVolumeML 191
-#define CMD_DeltaVolumeML 190
-#define CMD_TodayVolumeML 189
-#define CMD_YesterdayVolumeML 188
+#define CMD_TotalVolume 191
+#define CMD_DeltaVolume 190
+#define CMD_TodayVolume 189
+#define CMD_YesterdayVolume 188
+#define CMD_VolumePerMin 187
 #define CMD_PowerSupply 252
 #define CMD_SenderRSSI 196
 
@@ -50,13 +62,15 @@ struct DataPacket
 	byte countCmd;
 	uint32_t count;
 	byte totalVolumeCmd;
-	uint32_t totalVolumeML;	// total volume in ml (count * 1000 / COUNTSPERLITRE)
+	uint32_t totalVolume;	// total volume in ml (count * 1000 / COUNTSPERLITRE)
 	byte deltaVolumeCmd;
-	uint32_t deltaVolumeML;	// delta volume in ml since last pump operation
+	uint32_t deltaVolume;	// delta volume in ml
 	byte todayVolumeCmd;
-	uint32_t todayVolumeML; // day counter
+	uint32_t todayVolume; // day counter
 	byte yesterdayVolumeCmd;
-	uint32_t yesterdayVolumeML; // previous day counter value
+	uint32_t yesterdayVolume; // previous day counter value
+	byte volumePerMinCmd;
+	uint32_t volumePerMin; // flow rate
 	byte powerCmd;
 	uint16_t power;		// mV * 10
 	byte senderRssiCmd;
@@ -65,10 +79,11 @@ struct DataPacket
 	DataPacket()
 	{
 		countCmd = CMD_Count;
-		totalVolumeCmd = CMD_TotalVolumeML;
-		deltaVolumeCmd = CMD_DeltaVolumeML;
-		todayVolumeCmd = CMD_TodayVolumeML;
-		yesterdayVolumeCmd = CMD_YesterdayVolumeML;
+		totalVolumeCmd = CMD_TotalVolume;
+		deltaVolumeCmd = CMD_DeltaVolume;
+		todayVolumeCmd = CMD_TodayVolume;
+		yesterdayVolumeCmd = CMD_YesterdayVolume;
+		volumePerMinCmd = CMD_VolumePerMin;
 		powerCmd = CMD_PowerSupply;
 		senderRssiCmd = CMD_SenderRSSI;
 	}
@@ -77,11 +92,23 @@ struct DataPacket
 struct DataAckPacket
 {
 	byte countCmd;		// CMD_Count to set counter (10300 = 1L)
-						// CMD_TodayVolumeML to reset day counter
+						// CMD_TodayVolume to reset day counter
 	uint32_t count;
 };
 
 DataPacket data;
+
+#if defined(USESERIAL) || defined(USESERIAL2)
+
+int printChar(char var, FILE *stream) {
+	if (var == '\n') Serial.print('\r');
+	Serial.print(var);
+	return 0;
+}
+
+FILE out = { 0 };
+
+#endif
 
 ISR(WDT_vect) {
 	Sleepy::watchdogEvent();  // interrupt handler for JeeLabs Sleepy power saving
@@ -123,7 +150,7 @@ long readVcc()
 bool waitForAck(byte destNodeId)
 {
 #if defined(USESERIAL2)
-	Serial.print("wait_ack ...");
+	printf_P(PSTR("wait_ack ..."));
 #endif
 	int loops = 0;
 	MilliTimer ackTimer;
@@ -140,26 +167,25 @@ bool waitForAck(byte destNodeId)
 		byte rssi = (RF69::rssi >> 1);
 
 #if defined(USESERIAL2)
-		Serial.print(" r");
+		printf_P(PSTR(" r"));
 #endif
 
 		if (crc != 0)
 		{
 #if defined(USESERIAL2)
-			Serial.println(" err");
+			printf_P(PSTR(" err"));
 #endif
 			continue;
-	}
+		}
 
 #if defined(USESERIAL2)
-		Serial.print(" ok hdr=");
-		Serial.print(hdr, DEC);
+		printf_P(PSTR(" ok hdr=%02X"), hdr);
 #endif
 
 		if (hdr != (RF12_HDR_CTL | RF12_HDR_DST | myNodeID))
 		{
 #if defined(USESERIAL2)
-			Serial.println(" notForMe");
+			printf_P(PSTR(" notForMe"));
 #endif
 			continue;
 		}
@@ -169,8 +195,7 @@ bool waitForAck(byte destNodeId)
 		if (len > 0)
 		{
 #if defined(USESERIAL)
-			Serial.print(" len=");
-			Serial.print(len, DEC);
+			printf_P(PSTR(" len=%u"), len);
 #endif
 
 			if (len == sizeof(DataAckPacket))
@@ -181,46 +206,44 @@ bool waitForAck(byte destNodeId)
 				switch (ackPacket->countCmd)
 				{
 				case CMD_Count:
-					dv = ackPacket->count - FlowCounter_Value;
-					FlowCounter_Value += dv;
-					FlowCounter_dValue0 += dv;
-					FlowCounter_dayValue0 += dv;
+					dv = ackPacket->count - fsCounter;
+					fsCounter += dv;
+					fsDeltaCounter0 += dv;
+					fsTodayCounter0 += dv;
 #if defined(USESERIAL)
-					Serial.print(" cnt=");
-					Serial.print(FlowCounter_Value, DEC);
+					printf_P(PSTR(" cnt=%lu"), fsCounter);
 #endif
+					triggerSend = true;
 					break;
 
 					// day value reset
-				case CMD_TodayVolumeML:
-					FlowCounter_yesterdayQ = FlowCounter_dayQ;
-					FlowCounter_dayQ = 0;
-					FlowCounter_dayValue0 = FlowCounter_Value;
+				case CMD_TodayVolume:
+					fsYesterdayVolume = fsTodayVolume;
+					fsTodayVolume = 0;
+					fsTodayCounter0 = fsCounter;
 #if defined(USESERIAL)
-					Serial.print(" today=");
-					Serial.print(FlowCounter_yesterdayQ, DEC);
+					printf_P(PSTR(" today=%lu"), fsYesterdayVolume);
 #endif
+					triggerSend = true;
 					break;
 				}
 			}
 			else
 			{
 #if defined(USESERIAL)
-				Serial.print(" ackSizeMismatch");
+				printf_P(PSTR(" ackSizeMismatch"));
 #endif
 			}
 		}
 
 #if defined(USESERIAL2)
-		Serial.print(" match. loops=");
-		Serial.println(loops, DEC);
+		printf_P(PSTR(" match. loops=%d\n"), loops);
 #endif
 		return true;
 	}
 
 #if defined(USESERIAL2)
-	Serial.print(" timeout. loops=");
-	Serial.println(loops, DEC);
+	printf_P(PSTR(" timeout. loops=%d\n"), loops);
 #endif
 	return false;
 }
@@ -251,63 +274,73 @@ bool sendTo(byte destNodeId, bool requestAck, void* data, byte datalen)
 	rf12_sleep(0);
 
 #if defined(USESERIAL)
-	Serial.print(" sendTo=");
-	Serial.print(destNodeId, DEC);
+	printf_P(PSTR(" sendTo=%u"), destNodeId);
 	if (requestAck)
 	{
-		Serial.print(" ack=");
-		Serial.print(acked, DEC);
+		printf_P(PSTR(" ack=%d"), acked);
 	}
-	Serial.println();
+	printf_P(PSTR("\n"));
 #endif
 	return acked;
 }
 
-bool UpdateFlowCounterState()
+bool UpdateCounterState()
 {
-	bool pumpStopped = false;
+	bool stateChanged = false;
 
 	uint32_t t = millis();
 	byte state = digitalRead(SENSOR_PIN);
 
-	if (state != FlowCounter_State)
+	if (state != fsState)
 	{
-		FlowCounter_State = state;
-		FlowCounter_Value++;
-		FlowCounter_ValueTick = t;
+		fsState = state;
+		fsCounter++;
+		fsCounterTick = t;
 
-		if (FlowCounter_Running == 0)
+		if (fsCounterRunning == 0)
 		{
 #if defined(USESERIAL)
-			Serial.println("PUMP ON");
+			printf_P(PSTR("COUNTER ON\n"));
 #endif
 			// start counting
-			FlowCounter_Running = 1;
-	}
-}
+			fsCounterRunning = 1;
+			fsCounterStartTick = fsCounterTick;
 
-	if (FlowCounter_Running == 1)
+			//stateChanged = true;
+		}
+	}
+
+	if (fsCounterRunning == 1)
 	{
-		uint32_t dt = t - FlowCounter_ValueTick;
+		uint32_t dt = t - fsCounterTick;
 
 		if (dt >= PULSETIMEOUT)
 		{
 #if defined(USESERIAL)
-			Serial.println("PUMP OFF");
+			printf_P(PSTR("COUNTER OFF\n"));
 #endif
 			// stop counting
-			FlowCounter_Running = 0;
-			pumpStopped = true;
-
-			FlowCounter_Q = FlowCounter_Value * 1000 / COUNTSPERLITRE;
-			FlowCounter_dQ = (FlowCounter_Value - FlowCounter_dValue0) * 1000 / COUNTSPERLITRE;
-			FlowCounter_dayQ = (FlowCounter_Value - FlowCounter_dayValue0) * 1000 / COUNTSPERLITRE;
-
-			FlowCounter_dValue0 = FlowCounter_Value;
-	}
+			fsCounterRunning = 0;
+			stateChanged = true;
+		}
 	}
 
-	return pumpStopped;
+	return stateChanged;
+}
+
+void CalculateStatistics()
+{
+	fsTotalVolume = fsCounter * 1000 / COUNTSPERLITRE;
+	fsTodayVolume = (fsCounter - fsTodayCounter0) * 1000 / COUNTSPERLITRE;
+
+	fsDeltaVolume = (fsCounter - fsDeltaCounter0) * 1000 / COUNTSPERLITRE;
+	fsDeltaCounter0 = fsCounter;
+
+	uint32_t dt = fsCounterTick - fsCounterStartTick - PULSETIMEOUT;
+	fsQ = ((dt > 0) && (fsDeltaVolume > 0)) ? 60000 * fsDeltaVolume / dt : 0;
+#if defined(USESERIAL)
+	printf_P(PSTR("dt= %lu dV=%lu Q=%lu\n"), dt, fsDeltaVolume, fsQ);
+#endif
 }
 
 void setup()
@@ -320,7 +353,9 @@ void setup()
 
 #if defined(USESERIAL) || defined(USESERIAL2)
 	Serial.begin(38400);
-	Serial.println("setup");
+	fdev_setup_stream(&out, printChar, NULL, _FDEV_SETUP_WRITE);
+	stdout = &out;
+	printf_P(PSTR("setup\n"));
 #endif
 
 	rf12_initialize(myNodeID, freq, network);
@@ -329,7 +364,7 @@ void setup()
 	delay(1000);
 	digitalWrite(LED, LOW);
 
-	FlowCounter_State = digitalRead(SENSOR_PIN);
+	fsState = digitalRead(SENSOR_PIN);
 }
 
 void loop()
@@ -338,39 +373,46 @@ void loop()
 
 	while (true)
 	{
-		if (UpdateFlowCounterState())
-			break; // leave when pump operation stopped
+		if (UpdateCounterState())
+			break; // send when pump operation stopped
+
+		if (fsCounterRunning == 1)
+			continue; // do not send while counting
+
+		if (triggerSend)
+			break;
 
 		uint32_t t = millis();
 		uint32_t dt = t - t0;
-		if (dt >= WAITTIMEOUT)
-			break; // leave every WAITTIMEOUT interval
+		if (dt >= waitTimeout)
+			break; // send every WAITTIMEOUT interval
 	}
 
-	data.count = FlowCounter_Value;
-	data.totalVolumeML = FlowCounter_Q;
-	data.deltaVolumeML = FlowCounter_dQ;
-	data.todayVolumeML = FlowCounter_dayQ;
-	data.yesterdayVolumeML = FlowCounter_yesterdayQ;
+	CalculateStatistics();
+	triggerSend = false;
+
+	data.count = fsCounter;
+	data.totalVolume = fsTotalVolume;
+	data.deltaVolume = fsDeltaVolume;
+	data.todayVolume = fsTodayVolume;
+	data.yesterdayVolume = fsYesterdayVolume;
+	data.volumePerMin = fsQ;
 
 #if defined(USESERIAL)
-	Serial.println("MEASURE VCC ...");
+	printf_P(PSTR("MEASURE VCC ...\n"));
 #endif
 	data.power = readVcc() * 10;
 
 #if defined(USESERIAL)
-	Serial.print(" C="); Serial.print(data.count, DEC);
-	Serial.print(" Q="); Serial.print(data.totalVolumeML, DEC);
-	Serial.print(" dQ="); Serial.print(data.deltaVolumeML, DEC);
-	Serial.print(" dayQ="); Serial.print(data.todayVolumeML, DEC);
-	Serial.print(" yesterdayQ="); Serial.print(data.yesterdayVolumeML, DEC);
-	Serial.print(" V="); Serial.print(data.power, DEC);
-	Serial.print(" RSSI(-"); Serial.print(data.senderRssi, DEC); Serial.print(")");
-	Serial.println();
+	printf_P(PSTR(" C=%lu V=%lu dV=%lu dayV=%lu ydayV=%lu Q=%lu U=%hu RSSI(-%d)\n"),
+		data.count,
+		data.totalVolume, data.deltaVolume, data.todayVolume, data.yesterdayVolume,
+		data.volumePerMin, 
+		data.power, data.senderRssi);
 #endif
 
 #if defined(USESERIAL)
-	Serial.println("SEND ...");
+	printf_P(PSTR("SEND ...\n"));
 #endif
 	word retryDelay = RETRYDELAY;
 	byte retry = 0;
@@ -390,10 +432,7 @@ void loop()
 			break;
 
 #if defined(USESERIAL)
-		Serial.print(" SEND FAILED. RETRY IN ");
-		Serial.print(retryDelay, DEC);
-		Serial.print("ms");
-		Serial.println();
+		printf_P(PSTR(" SEND FAILED. RETRY IN %u ms\n"), retryDelay);
 #endif
 		delay(retryDelay);
 		retryDelay <<= 1;
@@ -406,9 +445,7 @@ void loop()
 #endif
 
 #if defined(USESERIAL)
-		Serial.print(" SENT SUCCESSFULLY. R=");
-		Serial.print(retry, DEC);
-		Serial.println();
+		printf_P(PSTR(" SENT OK. R=%u\n"), retry);
 #endif
 	}
 	else
@@ -418,10 +455,9 @@ void loop()
 #endif
 
 #if defined(USESERIAL)
-		Serial.print(" FAILED TO SEND AFTER ");
-		Serial.print(RETRIES, DEC);
-		Serial.print(" RETRIES.");
-		Serial.println();
+		printf_P(PSTR(" FAILED TO SEND AFTER %u RETRIES.\n"), RETRIES);
 #endif
 	}
+
+	waitTimeout = (data.deltaVolume > 0) ? WAITTIMEOUT_SHORT : WAITTIMEOUT_LONG;
 }
