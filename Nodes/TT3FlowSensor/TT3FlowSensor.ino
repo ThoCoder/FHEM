@@ -201,15 +201,15 @@ bool waitForAck(byte destNodeId)
 			if (len == sizeof(DataAckPacket))
 			{
 				DataAckPacket* ackPacket = (DataAckPacket*)rf12_data;
-				uint32_t dv;
+				uint32_t d;
 
 				switch (ackPacket->countCmd)
 				{
 				case CMD_Count:
-					dv = ackPacket->count - fsCounter;
-					fsCounter += dv;
-					fsDeltaCounter0 += dv;
-					fsTodayCounter0 += dv;
+					d = ackPacket->count - fsCounter;
+					fsCounter += d;
+					fsDeltaCounter0 += d;
+					fsTodayCounter0 += d;
 #if defined(USESERIAL)
 					printf_P(PSTR(" cnt=%lu"), fsCounter);
 #endif
@@ -336,7 +336,7 @@ void CalculateStatistics()
 	fsDeltaVolume = (fsCounter - fsDeltaCounter0) * 1000 / COUNTSPERLITRE;
 	fsDeltaCounter0 = fsCounter;
 
-	uint32_t dt = fsCounterTick - fsCounterStartTick - PULSETIMEOUT;
+	uint32_t dt = fsCounterTick - fsCounterStartTick;
 	fsQ = ((dt > 0) && (fsDeltaVolume > 0)) ? 60000 * fsDeltaVolume / dt : 0;
 #if defined(USESERIAL)
 	printf_P(PSTR("dt= %lu dV=%lu Q=%lu\n"), dt, fsDeltaVolume, fsQ);
