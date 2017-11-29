@@ -30,26 +30,25 @@ sub ThoLink_Initialize($)
   $hash->{ReadyFn}		= "ThoLink_Ready";
   $hash->{ReadFn}		= "ThoLink_Read";
   $hash->{WriteFn}		= "ThoLink_Write";
-  
-  $hash->{parseParams}  = 1;
 }
 
 #--------------------------------------------------------------------------------------------------
-sub ThoLink_Define($$$)
+sub ThoLink_Define($$)
 {
   my ($hash, $def) = @_;
+  Log3 undef,1, "ThoLink_Define def=".$def;
   Log3 $hash, 5, "ThoLink_Define";
-	
+
   DevIo_CloseDev($hash);
   
-  my @a = split( "[ \t][ \t]*", $def);
+  my @a = split("[ \t][ \t]*", $def);
 
   my $name = $a[0];
   my $dev = $a[2];
 
   $dev .= "\@57600" if($dev !~ m/\@/);
   $hash->{DeviceName} = $dev;
-  
+
   $hash->{Clients} = ":TN";
   my %mc = (
 	"1:TN" => "^OK "

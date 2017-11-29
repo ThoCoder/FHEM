@@ -28,17 +28,41 @@ sub TN_Initialize($)
   $data{TNCnf}{11}{ReadingName} = "temperature";
   $data{TNCnf}{11}{DataBytes} = 2;
   $data{TNCnf}{11}{Scale} = 0.1;
-  # Temperature (LaCrosse)-------------------------------------------
+  # Temperature (LaCrosse) --------------------------------
   $data{TNCnf}{12}{ReadingName} = "temperature";
   $data{TNCnf}{12}{DataBytes} = 2;
   $data{TNCnf}{12}{Scale} = 0.1;
   $data{TNCnf}{12}{Offset} = -40;
+  # Temperature 2 -----------------------------------------
+  $data{TNCnf}{13}{ReadingName} = "temperature2";
+  $data{TNCnf}{13}{DataBytes} = 2;
+  $data{TNCnf}{13}{Scale} = 0.1;
+  # Pressure ----------------------------------------------
+  $data{TNCnf}{14}{ReadingName} = "pressure";
+  $data{TNCnf}{14}{DataBytes} = 2;
+  $data{TNCnf}{14}{Scale} = 0.1;
   # Humidity ----------------------------------------------
   $data{TNCnf}{16}{ReadingName} = "humidity";
   $data{TNCnf}{16}{DataBytes} = 1;
   # ThoLink RSSI ------------------------------------------
   $data{TNCnf}{100}{ReadingName} = "RSSI";
   $data{TNCnf}{100}{DataBytes} = 1;
+  # Flowsensor ---------------------------------------------
+  $data{TNCnf}{187}{ReadingName} = "VolumeLPerMin";
+  $data{TNCnf}{187}{DataBytes} = 4;
+  $data{TNCnf}{187}{Scale} = 0.001;
+  $data{TNCnf}{188}{ReadingName} = "YesterdayVolumeL";
+  $data{TNCnf}{188}{DataBytes} = 4;
+  $data{TNCnf}{188}{Scale} = 0.001;
+  $data{TNCnf}{189}{ReadingName} = "TodayVolumeL";
+  $data{TNCnf}{189}{DataBytes} = 4;
+  $data{TNCnf}{189}{Scale} = 0.001;
+  $data{TNCnf}{190}{ReadingName} = "DeltaVolumeL";
+  $data{TNCnf}{190}{DataBytes} = 4;
+  $data{TNCnf}{190}{Scale} = 0.001;
+  $data{TNCnf}{191}{ReadingName} = "TotalVolumeL";
+  $data{TNCnf}{191}{DataBytes} = 4;
+  $data{TNCnf}{191}{Scale} = 0.001;
   # Gassensor ---------------------------------------------
   $data{TNCnf}{193}{ReadingName} = "Hall";
   $data{TNCnf}{193}{DataBytes} = 2;
@@ -182,12 +206,23 @@ sub TN_Parse($$)
 			{
 				$offset = $data{TNCnf}{$sensorType}{Offset};
 			}
+			my $scale2 = 1;
+			if(defined($hash->{READINGS}{$readingName."Scale"}))
+			{
+				$scale2 = $hash->{READINGS}{$readingName."Scale"}{VAL};
+			}
+			my $offset2 = 0;
+			if(defined($hash->{READINGS}{$readingName."Offset"}))
+			{
+				$offset2 = $hash->{READINGS}{$readingName."Offset"}{VAL};
+			}
 				
 			my $sensorValue = $rawValue*$scale + $offset;
+			my $sensorValue2 = $sensorValue*$scale2 + $offset2;
 			
-			$readings{$readingName} = $sensorValue;
+			$readings{$readingName} = sprintf("%.10g", $sensorValue2);
 
-			Log3 $hash, 5, "TN_Parse: $name/T:$nodeType/G:$nodeGroup/N:$nodeId ($nodeCode): $readingName($sensorType) = $sensorValue ($rawValue * $scale + $offset)";
+			Log3 $hash, 5, "TN_Parse: $name/T:$nodeType/G:$nodeGroup/N:$nodeId ($nodeCode): $readingName($sensorType) = $sensorValue2 = ($sensorValue = $rawValue * $scale + $offset) * $scale2 + $offset2";
 		}
 	}
 	else
