@@ -243,13 +243,5 @@ ModelManifest.xml
 
 # FAKE - F# Make
 .fake/
-/Gateways/LaCrosseGateway/__vm
-/Gateways/JeeLinkGateway/__vm
-/Nodes/TT3Thermometer/__vm
-/Nodes/TT3Thermometer/~AutoRecover.TT3Thermometer.vcxproj
-/Nodes/TT3GasSensor/__vm
-/Gateways/MaxGateway/__vm
-/Gateways/MaxGateway/~AutoRecover.MaxGateway.vcxproj
-/Nodes/TT3FlowSensor/__vm/.TT3FlowSensor.vsarduino.h
-/Nodes/TT3FlowSensor/__vm
-/Nodes/TT3FlowSensor/~AutoRecover.TT3FlowSensor.vcxproj
+__vm/
+~AutoRecover
