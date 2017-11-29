@@ -51,7 +51,7 @@
       <AdditionalIncludeDirectories>C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master;C:\Program Files (x86)\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\libraries;C:\Users\Thomas\Documents\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny;$(ProjectDir)..\TT3FlowSensor;C:\Program Files (x86)\Arduino\hardware\tools\avr\avr\include\;C:\Program Files (x86)\Arduino\hardware\tools\avr\avr\include\avr\;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.8.1\include;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.9.2\include;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.9.3\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>$(ProjectDir)__vm\.TT3FlowSensor.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
-      <PreprocessorDefinitions>__AVR_ATtiny84__;__AVR_ATTINY84__;_VMDEBUG=1;F_CPU=8000000L;ARDUINO=10805;ARDUINO_AVR_TINY_TINY_AVR_ATTINY84AT8;ARDUINO_ARCH_AVR;__cplusplus=201103L;_VMICRO_INTELLISENSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__AVR_ATtiny84__;__AVR_ATTINY84__;F_CPU=8000000L;ARDUINO=10805;ARDUINO_AVR_ATTINY84AT8;ARDUINO_ARCH_AVR;__cplusplus=201103L;_VMICRO_INTELLISENSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
