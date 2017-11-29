@@ -1,4 +1,4 @@
-#define USESERIAL
+//#define USESERIAL
 #define USESERIAL2
 #define LED_SENDFLASHS
 
@@ -14,9 +14,11 @@
 #define freq RF12_868MHZ
 #define ACK_TIME 50
 #define RETRYDELAY 500
-#define RETRIES 5
+#define RETRIES 0
 #define WAITTIMEOUT_INIT 10000
 #define WAITTIMEOUT_LONG 300000
+#define WAITTIMEOUT_SHORT 60000
+#define MEASURE_INTERVAL 40
 
 bool triggerSend = false;
 uint32_t waitTimeout = WAITTIMEOUT_INIT;
@@ -35,6 +37,7 @@ uint32_t wcsTotalVolume = 0;
 uint32_t wcsTodayVolume = 0;
 uint32_t wcsYesterdayVolume = 0;
 
+#define CMD_Hall 193
 #define CMD_TotalVolume 191
 #define CMD_TodayVolume 189
 #define CMD_YesterdayVolume 188
@@ -43,6 +46,8 @@ uint32_t wcsYesterdayVolume = 0;
 
 struct DataPacket
 {
+	byte hallCmd;
+	uint16_t hall;				// 0 .. 1023
 	byte totalVolumeCmd;
 	uint32_t totalVolume;		// total volume in ml
 	byte todayVolumeCmd;
@@ -56,6 +61,7 @@ struct DataPacket
 
 	DataPacket()
 	{
+		hallCmd = CMD_Hall;
 		totalVolumeCmd = CMD_TotalVolume;
 		todayVolumeCmd = CMD_TodayVolume;
 		yesterdayVolumeCmd = CMD_YesterdayVolume;
@@ -95,8 +101,8 @@ void flashLED(byte interval, byte count)
 	{
 		if (n > 0)
 			delay(interval);
-
 		digitalWrite(LED, HIGH);
+
 		delay(interval);
 		digitalWrite(LED, LOW);
 	}
@@ -209,7 +215,7 @@ bool UpdateCounterState()
 	if (wcsSensorState != wcsSensorPrevState)
 	{
 		flashLED(10, 1);
-}
+	}
 #endif
 
 	return changed;
@@ -244,7 +250,7 @@ bool waitForAck(byte destNodeId)
 			printf_P(PSTR(" err"));
 #endif
 			continue;
-	}
+		}
 
 #if defined(USESERIAL2)
 		printf_P(PSTR(" ok hdr=%02X"), hdr);
@@ -354,7 +360,7 @@ void setup()
 	digitalWrite(LED, HIGH);
 
 	pinMode(SENSOR_POWER, OUTPUT);
-	digitalWrite(SENSOR_POWER, HIGH);
+	digitalWrite(SENSOR_POWER, LOW);
 
 #if defined(USESERIAL) || defined(USESERIAL2)
 	Serial.begin(38400);
@@ -387,11 +393,12 @@ void loop()
 		if (dt >= waitTimeout)
 			break; // send every WAITTIMEOUT interval
 
-		delay(40);
+		delay(MEASURE_INTERVAL);
 	}
 
 	triggerSend = false;
 
+	data.hall = wcsSensorValue;
 	data.totalVolume = wcsTotalVolume;
 	data.todayVolume = wcsTodayVolume;
 	data.yesterdayVolume = wcsYesterdayVolume;
@@ -455,5 +462,5 @@ void loop()
 #endif
 	}
 
-	waitTimeout = WAITTIMEOUT_LONG;
+	waitTimeout = success ? WAITTIMEOUT_LONG : WAITTIMEOUT_SHORT;
 }
