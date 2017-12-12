@@ -1,8 +1,8 @@
-//#define USESERIAL
+#define USESERIAL
 //#define USESERIAL2
 #define LED_SENDFLASHS
 
-#define RF69_COMPAT 1
+//#define RF69_COMPAT 1
 #include <JeeLib.h>
 
 #define LED 7
@@ -10,17 +10,18 @@
 #define SENSOR_POWER 10
 
 #define myNodeID 22
-#define network 99
+#define network 212
 #define freq RF12_868MHZ
 #define ACK_TIME 50
 #define RETRYDELAY 500
 #define RETRIES 5
-#define WAITTIMEOUT_INIT 10000
-#define WAITTIMEOUT_LONG 300000
-#define WAITTIMEOUT_SHORT 60000
+#define WAITTIMEOUT_INIT 2000//10000
+#define WAITTIMEOUT_LONG 30000//300000
+#define WAITTIMEOUT_SHORT 10000//60000
 
-#define COUNTSPERLITRE 10300
 #define PULSETIMEOUT 1000
+const float COUNTSPERMILLILITRE = 10.300;
+const float MILLILITREPERCOUNT = 1.0 / COUNTSPERMILLILITRE;
 
 bool triggerSend = false;
 uint32_t waitTimeout = WAITTIMEOUT_INIT;
@@ -194,7 +195,7 @@ bool waitForAck(byte destNodeId)
 
 		if (len > 0)
 		{
-#if defined(USESERIAL)
+#if defined(USESERIAL2)
 			printf_P(PSTR(" len=%u"), len);
 #endif
 
@@ -210,19 +211,34 @@ bool waitForAck(byte destNodeId)
 					fsCounter += d;
 					fsDeltaCounter0 += d;
 					fsTodayCounter0 += d;
-#if defined(USESERIAL)
+#if defined(USESERIAL2)
 					printf_P(PSTR(" cnt=%lu"), fsCounter);
+#endif
+					triggerSend = true;
+					break;
+
+				case CMD_TotalVolume:
+					d = Volume2Count(ackPacket->count) - fsCounter;
+					fsCounter += d;
+					fsDeltaCounter0 += d;
+					fsTodayCounter0 += d;
+#if defined(USESERIAL2)
+					printf_P(PSTR(" total=%lu"), fsTotalVolume);
 #endif
 					triggerSend = true;
 					break;
 
 					// day value reset
 				case CMD_TodayVolume:
-					fsYesterdayVolume = fsTodayVolume;
-					fsTodayVolume = 0;
-					fsTodayCounter0 = fsCounter;
-#if defined(USESERIAL)
-					printf_P(PSTR(" today=%lu"), fsYesterdayVolume);
+					d = ackPacket->count;
+
+					if (d == 0)
+						fsYesterdayVolume = fsTodayVolume;
+
+					fsTodayVolume = d;
+					fsTodayCounter0 = fsCounter - Volume2Count(d);
+#if defined(USESERIAL2)
+					printf_P(PSTR(" today=%lu yesterday=%lu"), fsTodayVolume, fsYesterdayVolume);
 #endif
 					triggerSend = true;
 					break;
@@ -230,7 +246,7 @@ bool waitForAck(byte destNodeId)
 			}
 			else
 			{
-#if defined(USESERIAL)
+#if defined(USESERIAL2)
 				printf_P(PSTR(" ackSizeMismatch"));
 #endif
 			}
@@ -300,7 +316,7 @@ bool UpdateCounterState()
 		if (fsCounterRunning == 0)
 		{
 #if defined(USESERIAL)
-			printf_P(PSTR("COUNTER ON\n"));
+			printf_P(PSTR("CTR ON\n"));
 #endif
 			// start counting
 			fsCounterRunning = 1;
@@ -317,7 +333,7 @@ bool UpdateCounterState()
 		if (dt >= PULSETIMEOUT)
 		{
 #if defined(USESERIAL)
-			printf_P(PSTR("COUNTER OFF\n"));
+			printf_P(PSTR("CTR OFF\n"));
 #endif
 			// stop counting
 			fsCounterRunning = 0;
@@ -328,17 +344,27 @@ bool UpdateCounterState()
 	return stateChanged;
 }
 
+uint32_t Count2Volume(uint32_t count)
+{
+	return (uint32_t)((float)count * MILLILITREPERCOUNT);
+}
+
+uint32_t Volume2Count(uint32_t volume)
+{
+	return (uint32_t)((float)volume * COUNTSPERMILLILITRE);
+}
+
 void CalculateStatistics()
 {
-	fsTotalVolume = fsCounter * 1000 / COUNTSPERLITRE;
-	fsTodayVolume = (fsCounter - fsTodayCounter0) * 1000 / COUNTSPERLITRE;
+	fsTotalVolume = Count2Volume(fsCounter);
+	fsTodayVolume = Count2Volume(fsCounter - fsTodayCounter0);
 
-	fsDeltaVolume = (fsCounter - fsDeltaCounter0) * 1000 / COUNTSPERLITRE;
+	fsDeltaVolume = Count2Volume(fsCounter - fsDeltaCounter0);
 	fsDeltaCounter0 = fsCounter;
 
 	uint32_t dt = fsCounterTick - fsCounterStartTick;
 	fsQ = ((dt > 0) && (fsDeltaVolume > 0)) ? 60000 * fsDeltaVolume / dt : 0;
-#if defined(USESERIAL)
+#if defined(USESERIAL2)
 	printf_P(PSTR("dt= %lu dV=%lu Q=%lu\n"), dt, fsDeltaVolume, fsQ);
 #endif
 }
@@ -398,7 +424,7 @@ void loop()
 	data.yesterdayVolume = fsYesterdayVolume;
 	data.volumePerMin = fsQ;
 
-#if defined(USESERIAL)
+#if defined(USESERIAL2)
 	printf_P(PSTR("MEASURE VCC ...\n"));
 #endif
 	data.power = readVcc() * 10;
@@ -407,12 +433,12 @@ void loop()
 	printf_P(PSTR(" C=%lu V=%lu dV=%lu dayV=%lu ydayV=%lu Q=%lu U=%hu RSSI(-%d)\n"),
 		data.count,
 		data.totalVolume, data.deltaVolume, data.todayVolume, data.yesterdayVolume,
-		data.volumePerMin, 
+		data.volumePerMin,
 		data.power, data.senderRssi);
 #endif
 
-#if defined(USESERIAL)
-	printf_P(PSTR("SEND ...\n"));
+#if defined(USESERIAL2)
+	printf_P(PSTR("SEND\n"));
 #endif
 	word retryDelay = RETRYDELAY;
 	byte retry = 0;
@@ -432,7 +458,7 @@ void loop()
 			break;
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" SEND FAILED. RETRY IN %u ms\n"), retryDelay);
+		printf_P(PSTR(" RETRY %u ms\n"), retryDelay);
 #endif
 		delay(retryDelay);
 		retryDelay <<= 1;
@@ -445,7 +471,7 @@ void loop()
 #endif
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" SENT OK. R=%u\n"), retry);
+		printf_P(PSTR(" OK. R=%u\n"), retry);
 #endif
 	}
 	else
@@ -455,7 +481,7 @@ void loop()
 #endif
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" FAILED TO SEND AFTER %u RETRIES.\n"), RETRIES);
+		printf_P(PSTR(" FAILED (%u)\n"), RETRIES);
 #endif
 	}
 
