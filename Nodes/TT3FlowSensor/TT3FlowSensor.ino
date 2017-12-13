@@ -1,8 +1,8 @@
-#define USESERIAL
+//#define USESERIAL
 //#define USESERIAL2
 #define LED_SENDFLASHS
 
-//#define RF69_COMPAT 1
+#define RF69_COMPAT 1
 #include <JeeLib.h>
 
 #define LED 7
@@ -10,14 +10,14 @@
 #define SENSOR_POWER 10
 
 #define myNodeID 22
-#define network 212
+#define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
 #define RETRYDELAY 500
 #define RETRIES 5
-#define WAITTIMEOUT_INIT 2000//10000
-#define WAITTIMEOUT_LONG 30000//300000
-#define WAITTIMEOUT_SHORT 10000//60000
+#define WAITTIMEOUT_INIT 10000
+#define WAITTIMEOUT_LONG 300000
+#define WAITTIMEOUT_SHORT 60000
 
 #define PULSETIMEOUT 1000
 const float COUNTSPERMILLILITRE = 10.300;
