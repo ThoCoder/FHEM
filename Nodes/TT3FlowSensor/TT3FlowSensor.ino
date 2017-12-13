@@ -186,7 +186,7 @@ bool waitForAck(byte destNodeId)
 		if (hdr != (RF12_HDR_CTL | RF12_HDR_DST | myNodeID))
 		{
 #if defined(USESERIAL2)
-			printf_P(PSTR(" notForMe"));
+			printf_P(PSTR(" notForMe\n"));
 #endif
 			continue;
 		}
@@ -223,7 +223,7 @@ bool waitForAck(byte destNodeId)
 					fsDeltaCounter0 += d;
 					fsTodayCounter0 += d;
 #if defined(USESERIAL2)
-					printf_P(PSTR(" total=%lu"), fsTotalVolume);
+					printf_P(PSTR(" total=%lu"), Count2Volume(fsCounter));
 #endif
 					triggerSend = true;
 					break;

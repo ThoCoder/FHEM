@@ -86,7 +86,7 @@
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(ProjectDir)..\TT3GasSensor;C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master;C:\Program Files (x86)\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\libraries;C:\Users\Thomas\Documents\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny;C:\Program Files (x86)\Arduino\hardware\tools\avr\avr\include\;C:\Program Files (x86)\Arduino\hardware\tools\avr\avr\include\avr\;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.8.1\include;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.9.2\include;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.9.3\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>$(ProjectDir)__vm\.TT3GasSensor.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
-      <PreprocessorDefinitions>__AVR_ATtiny84__;__AVR_ATTINY84__;F_CPU=8000000L;ARDUINO=10805;ARDUINO_AVR_ATTINY84AT8;ARDUINO_ARCH_AVR;__cplusplus=201103L;_VMICRO_INTELLISENSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>__AVR_ATtiny84__;__AVR_ATTINY84__;_VMDEBUG=1;F_CPU=8000000L;ARDUINO=10805;ARDUINO_AVR_ATTINY84AT8;ARDUINO_ARCH_AVR;__cplusplus=201103L;_VMICRO_INTELLISENSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -109,10 +109,14 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
-      <Optimization>MaxSpeed</Optimization>
+      <Optimization>Disabled</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\TT3GasSensor;C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master;C:\Program Files (x86)\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\libraries;C:\Users\Thomas\Documents\Arduino\libraries;C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny;C:\Program Files (x86)\Arduino\hardware\tools\avr\avr\include\;C:\Program Files (x86)\Arduino\hardware\tools\avr\avr\include\avr\;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.8.1\include;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.9.2\include;C:\Program Files (x86)\Arduino\hardware\tools\avr\lib\gcc\avr\4.9.3\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ForcedIncludeFiles>$(ProjectDir)__vm\.TT3GasSensor.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <PreprocessorDefinitions>__AVR_ATtiny84__;__AVR_ATTINY84__;F_CPU=8000000L;ARDUINO=10805;ARDUINO_AVR_ATTINY84AT8;ARDUINO_ARCH_AVR;__cplusplus=201103L;_VMICRO_INTELLISENSE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -132,7 +136,7 @@
   </ImportGroup>
   <ProjectExtensions>
     <VisualStudio>
-      <UserProperties arduino.upload.port="COM2" />
+      <UserProperties vm.upload.useprogrammer="1" arduino.upload.port="COM5" />
     </VisualStudio>
   </ProjectExtensions>
 </Project>
