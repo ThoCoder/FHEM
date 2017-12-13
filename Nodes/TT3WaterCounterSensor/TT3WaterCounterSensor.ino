@@ -2,7 +2,7 @@
 //#define USESERIAL2
 #define LED_SENDFLASHS
 
-//#define RF69_COMPAT 1
+#define RF69_COMPAT 1
 #include <JeeLib.h>
 #include"avr\eeprom.h"
 
@@ -11,7 +11,7 @@
 #define SENSOR_POWER 10
 
 #define myNodeID 23
-#define network 212
+#define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
 #define RETRYDELAY 500
