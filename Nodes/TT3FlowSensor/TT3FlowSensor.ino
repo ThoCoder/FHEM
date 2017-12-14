@@ -1,4 +1,4 @@
-//#define USESERIAL
+#define USESERIAL
 //#define USESERIAL2
 #define LED_SENDFLASHS
 
@@ -41,12 +41,10 @@ uint32_t fsCounter = 0;
 uint32_t fsCounterTick = 0;
 uint32_t fsCounterRunning = 0;
 uint32_t fsCounterStartTick = 0;
-uint32_t fsTotalVolume = 0;
 uint32_t fsDeltaCounter0 = 0;
-uint32_t fsDeltaVolume = 0;
 uint32_t fsQ = 0;
+
 uint32_t fsTodayCounter0 = 0;
-uint32_t fsTodayVolume = 0;
 uint32_t fsYesterdayVolume = 0;
 
 #define CMD_Count 195
@@ -56,7 +54,7 @@ uint32_t fsYesterdayVolume = 0;
 #define CMD_YesterdayVolume 188
 #define CMD_VolumePerMin 187
 #define CMD_PowerSupply 252
-#define CMD_SenderRSSI 196
+#define CMD_RemoteRSSI 101
 
 struct DataPacket
 {
@@ -74,8 +72,8 @@ struct DataPacket
 	uint32_t volumePerMin; // flow rate
 	byte powerCmd;
 	uint16_t power;		// mV * 10
-	byte senderRssiCmd;
-	byte senderRssi;	// dB * -1
+	byte remoteRssiCmd;
+	byte remoteRssi;	// dB * -1
 
 	DataPacket()
 	{
@@ -86,15 +84,15 @@ struct DataPacket
 		yesterdayVolumeCmd = CMD_YesterdayVolume;
 		volumePerMinCmd = CMD_VolumePerMin;
 		powerCmd = CMD_PowerSupply;
-		senderRssiCmd = CMD_SenderRSSI;
+		remoteRssiCmd = CMD_RemoteRSSI;
 	}
 };
 
 struct DataAckPacket
 {
-	byte countCmd;		// CMD_Count to set counter (10300 = 1L)
-						// CMD_TodayVolume to reset day counter
-	uint32_t count;
+	uint32_t totalVolume;
+	uint32_t todayVolume;
+	uint32_t yesterdayVolume;
 };
 
 DataPacket data;
@@ -191,7 +189,7 @@ bool waitForAck(byte destNodeId)
 			continue;
 		}
 
-		data.senderRssi = rssi;
+		data.remoteRssi = rssi;
 
 		if (len > 0)
 		{
@@ -201,47 +199,37 @@ bool waitForAck(byte destNodeId)
 
 			if (len == sizeof(DataAckPacket))
 			{
+				triggerSend = true;
+
 				DataAckPacket* ackPacket = (DataAckPacket*)rf12_data;
-				uint32_t d;
-
-				switch (ackPacket->countCmd)
+				uint32_t dCount;
+				
+				if (ackPacket->totalVolume != 0)
 				{
-				case CMD_Count:
-					d = ackPacket->count - fsCounter;
-					fsCounter += d;
-					fsDeltaCounter0 += d;
-					fsTodayCounter0 += d;
-#if defined(USESERIAL2)
-					printf_P(PSTR(" cnt=%lu"), fsCounter);
-#endif
-					triggerSend = true;
-					break;
+					dCount = Volume2Count(ackPacket->totalVolume) - fsCounter;
+					fsCounter += dCount;
+					fsDeltaCounter0 += dCount;
+					fsTodayCounter0 += dCount;
+				}
 
-				case CMD_TotalVolume:
-					d = Volume2Count(ackPacket->count) - fsCounter;
-					fsCounter += d;
-					fsDeltaCounter0 += d;
-					fsTodayCounter0 += d;
-#if defined(USESERIAL2)
-					printf_P(PSTR(" total=%lu"), Count2Volume(fsCounter));
-#endif
-					triggerSend = true;
-					break;
+				if (ackPacket->todayVolume != 0)
+				{
+					if (ackPacket->todayVolume == -1)
+					{
+						fsYesterdayVolume = Count2Volume(fsCounter - fsTodayCounter0);
+						dCount = 0;
+					}
+					else
+					{
+						dCount = Volume2Count(ackPacket->todayVolume);
+					}
 
-					// day value reset
-				case CMD_TodayVolume:
-					d = ackPacket->count;
+					fsTodayCounter0 = fsCounter - dCount;
+				}
 
-					if (d == 0)
-						fsYesterdayVolume = fsTodayVolume;
-
-					fsTodayVolume = d;
-					fsTodayCounter0 = fsCounter - Volume2Count(d);
-#if defined(USESERIAL2)
-					printf_P(PSTR(" today=%lu yesterday=%lu"), fsTodayVolume, fsYesterdayVolume);
-#endif
-					triggerSend = true;
-					break;
+				if (ackPacket->yesterdayVolume != 0)
+				{
+					fsYesterdayVolume = ackPacket->yesterdayVolume;
 				}
 			}
 			else
@@ -354,21 +342,6 @@ uint32_t Volume2Count(uint32_t volume)
 	return (uint32_t)((float)volume * COUNTSPERMILLILITRE);
 }
 
-void CalculateStatistics()
-{
-	fsTotalVolume = Count2Volume(fsCounter);
-	fsTodayVolume = Count2Volume(fsCounter - fsTodayCounter0);
-
-	fsDeltaVolume = Count2Volume(fsCounter - fsDeltaCounter0);
-	fsDeltaCounter0 = fsCounter;
-
-	uint32_t dt = fsCounterTick - fsCounterStartTick;
-	fsQ = ((dt > 0) && (fsDeltaVolume > 0)) ? 60000 * fsDeltaVolume / dt : 0;
-#if defined(USESERIAL2)
-	printf_P(PSTR("dt= %lu dV=%lu Q=%lu\n"), dt, fsDeltaVolume, fsQ);
-#endif
-}
-
 void setup()
 {
 	pinMode(LED, OUTPUT);
@@ -414,15 +387,16 @@ void loop()
 			break; // send every WAITTIMEOUT interval
 	}
 
-	CalculateStatistics();
 	triggerSend = false;
 
 	data.count = fsCounter;
-	data.totalVolume = fsTotalVolume;
-	data.deltaVolume = fsDeltaVolume;
-	data.todayVolume = fsTodayVolume;
+	data.totalVolume = Count2Volume(fsCounter);
+	data.deltaVolume = Count2Volume(fsCounter - fsDeltaCounter0); 
+	fsDeltaCounter0 = fsCounter;
+	data.todayVolume = Count2Volume(fsCounter - fsTodayCounter0);
 	data.yesterdayVolume = fsYesterdayVolume;
-	data.volumePerMin = fsQ;
+	uint32_t dt = fsCounterTick - fsCounterStartTick;
+	data.volumePerMin = ((dt > 0) && (data.deltaVolume > 0)) ? 60000 * data.deltaVolume / dt : 0;
 
 #if defined(USESERIAL2)
 	printf_P(PSTR("MEASURE VCC ...\n"));
@@ -430,11 +404,11 @@ void loop()
 	data.power = readVcc() * 10;
 
 #if defined(USESERIAL)
-	printf_P(PSTR(" C=%lu V=%lu dV=%lu dayV=%lu ydayV=%lu Q=%lu U=%hu RSSI(-%d)\n"),
+	printf_P(PSTR(" C=%lu V=%lu dV=%lu Vd=%lu Vy=%lu Q=%lu U=%hu RSSI(-%d)\n"),
 		data.count,
 		data.totalVolume, data.deltaVolume, data.todayVolume, data.yesterdayVolume,
 		data.volumePerMin,
-		data.power, data.senderRssi);
+		data.power, data.remoteRssi);
 #endif
 
 #if defined(USESERIAL2)
