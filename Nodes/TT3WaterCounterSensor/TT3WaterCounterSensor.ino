@@ -388,9 +388,14 @@ bool waitForAck(byte destNodeId)
 				if (ackPacket->todayVolume != 0)
 				{
 					if (ackPacket->todayVolume == -1)
+					{
 						wcsYesterdayVolume = wcsTodayVolume;
-
-					wcsTodayVolume = ackPacket->todayVolume;
+						wcsTodayVolume = 0;
+					}
+					else
+					{
+						wcsTodayVolume = ackPacket->todayVolume;
+					}
 				}
 
 				if (ackPacket->yesterdayVolume != 0)
