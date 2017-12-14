@@ -6,7 +6,7 @@
 #include "avr\wdt.h"
 #include "postbox.h"
 
-#define VERSION "[ThoGateway::JeeLink V2.1]"
+#define VERSION "[ThoGateway::JeeLink V2.2]"
 
 #define LED_PIN 9
 #define LED_ON LOW
@@ -24,7 +24,7 @@ byte RssiThreshold = 110;
 byte msg[RF12_MAXDATA + 5];
 byte msgLen;
 
-#define STACKSIZE 32
+#define STACKSIZE 64
 unsigned long value;
 byte stack[STACKSIZE], top, pending;
 Postbox postbox;

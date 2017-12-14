@@ -1,7 +1,7 @@
 #include "arduino.h"
 
-#define POSTBOXSIZE 16
-#define POSTBOXMAXMSGLEN 14
+#define POSTBOXSIZE 30
+#define POSTBOXMAXMSGLEN 30
 
 struct PostboxEntry
 {

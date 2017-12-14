@@ -3,15 +3,16 @@
 //#define LED_COUNTFLASHS
 #define LED_SENDFLASHS
 
-//#define RF69_COMPAT 1
+#define RF69_COMPAT 1
 #include <JeeLib.h>
+#include "avr\eeprom.h"
 
 #define LED 7
 #define SENSOR_PIN 1//9
 #define SENSOR_POWER 10
 
 #define myNodeID 10
-#define network 212
+#define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
 #define RETRYDELAY 500
@@ -19,45 +20,71 @@
 #define WAITLOOPS 600
 #define WAITINTERVAL 500
 #define DEVIDER 10 
+#define MIDLEVEL 465
+#define THRESHOLD 15
 
 // set counter (RF12Demo V12.1):            195,nnnnnnD10m
 // set counter (ThoGateway::JeeLink V2.1):  10,195,nnnnnnDm
 // nnnnnn .. gas counter value to set in (0.1m^3 / DEVIDER) units
 
-uint16_t gcHallValue;
-byte gcHallPrevState = 255;
-byte gcHallState = 255;
-uint16_t gcHallValueHighThreshold = 480;
-uint16_t gcHallValueLowThreshold = 450;
+uint16_t gcSensorValue;
+byte gcSensorPrevState = 255;
+byte gcSensorState = 255;
+uint16_t gcSensorValueHighThreshold = MIDLEVEL + THRESHOLD;
+uint16_t gcSensorValueLowThreshold = MIDLEVEL - THRESHOLD;
 byte gcSignal = 0;
 byte gcFraction = DEVIDER - 1;
 uint32_t gcCounter = 0;
 bool triggerSend = false;
 
-uint32_t gcTotalVolume = 0;
 uint32_t gcTodayCounter0 = 0;
-uint32_t gcTodayVolume = 0;
 uint32_t gcYesterdayVolume = 0;
 
+uint16_t gcHighMax = MIDLEVEL + THRESHOLD;
+uint16_t gcHighAvg = MIDLEVEL + THRESHOLD;
+uint16_t gcLowAvg = MIDLEVEL - THRESHOLD;
+uint16_t gcLowMin = MIDLEVEL - THRESHOLD;
+uint16_t gcCurMax, gcCurMin;
+uint32_t gcCurAvg;
+uint16_t gcCurAvgN = 1;
+#define AVGNMAX (3600000 / WAITINTERVAL)
 
 #define CMD_TotalVolume 191
 #define CMD_TodayVolume 189
 #define CMD_YesterdayVolume 188
 
-#define CMD_Hall 193
 #define CMD_Signal 194
 #define CMD_Count 195
 #define CMD_PowerSupply 252
-#define CMD_SenderRSSI 196
+#define CMD_RemoteRSSI 101
+
+#define CMD_Sensor 179
+#define CMD_SensorMax 180
+#define CMD_SensorAvgHigh 181
+#define CMD_SensorThresHigh 182
+#define CMD_SensorAvg 183
+#define CMD_SensorThresLow 184
+#define CMD_SensorAvgLow 185
+#define CMD_SensorMin 186
 
 struct DataPacket
 {
-	byte hallCmd;
-	uint16_t hall;		// 0 .. 1023
 	byte signalCmd;
 	byte signal;		// 0=off, 1=on
 	byte countCmd;
 	uint32_t count;		// +1 = 0.1m3 = 100L
+	byte sensorMaxCmd;
+	uint16_t sensorMax;			// 0 .. 1023
+	byte sensorAvgHighCmd;
+	uint16_t sensorAvgHigh;		// 0 .. 1023
+	byte sensorThresHighCmd;
+	uint16_t sensorThresHigh;	// 0 .. 1023
+	byte sensorThresLowCmd;
+	uint16_t sensorThresLow;	// 0 .. 1023
+	byte sensorAvgLowCmd;
+	uint16_t sensorAvgLow;		// 0 .. 1023
+	byte sensorMinCmd;
+	uint16_t sensorMin;			// 0 .. 1023
 	byte totalVolumeCmd;
 	uint32_t totalVolume;	// total volume in l
 	byte todayVolumeCmd;
@@ -66,31 +93,34 @@ struct DataPacket
 	uint32_t yesterdayVolume; // previous day counter value
 	byte powerCmd;
 	uint16_t power;		// mV * 10
-	byte senderRssiCmd;
-	byte senderRssi;	// dB * -1
+	byte remoteRssiCmd;
+	byte remoteRssi;	// dB * -1
 
 	DataPacket()
 	{
-		hallCmd = CMD_Hall;
 		signalCmd = CMD_Signal;
 		countCmd = CMD_Count;
+		sensorMaxCmd = CMD_SensorMax;
+		sensorAvgHighCmd = CMD_SensorAvgHigh;
+		sensorThresHighCmd = CMD_SensorThresHigh;
+		sensorThresLowCmd = CMD_SensorThresLow;
+		sensorAvgLowCmd = CMD_SensorAvgLow;
+		sensorMinCmd = CMD_SensorMin;
 		totalVolumeCmd = CMD_TotalVolume;
 		todayVolumeCmd = CMD_TodayVolume;
 		yesterdayVolumeCmd = CMD_YesterdayVolume;
 		powerCmd = CMD_PowerSupply;
-		senderRssiCmd = CMD_SenderRSSI;
+		remoteRssiCmd = CMD_RemoteRSSI;
 	}
 };
 
 struct DataAckPacket
 {
-	byte countCmd;
-	uint32_t count;
-
-	DataAckPacket()
-	{
-		countCmd = CMD_Count;
-	}
+	uint32_t totalVolume;
+	uint32_t todayVolume;
+	uint32_t yesterdayVolume;
+	uint16_t thresHigh;
+	uint16_t thresLow;
 };
 
 DataPacket data;
@@ -109,6 +139,44 @@ FILE out = { 0 };
 
 ISR(WDT_vect) {
 	Sleepy::watchdogEvent();  // interrupt handler for JeeLabs Sleepy power saving
+}
+
+#define CONFIG_EEPROM_ADDR ((uint8_t*)0x60)
+#define CONFIG_MAGIC 0x12131415
+struct _config
+{
+	long magic;
+	uint16_t wcsSensorValueHighThreshold;
+	uint16_t wcsSensorValueLowThreshold;
+} config;
+
+void loadConfig()
+{
+	eeprom_read_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
+	if (config.magic != CONFIG_MAGIC)
+	{
+		saveConfig();
+	}
+	else
+	{
+		gcSensorValueHighThreshold = config.wcsSensorValueHighThreshold;
+		gcSensorValueLowThreshold = config.wcsSensorValueLowThreshold;
+	}
+}
+
+void saveConfig()
+{
+	config.magic = CONFIG_MAGIC;
+	config.wcsSensorValueHighThreshold = gcSensorValueHighThreshold;
+	config.wcsSensorValueLowThreshold = gcSensorValueLowThreshold;
+
+	eeprom_update_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
+}
+
+void printConfig()
+{
+	printf_P(PSTR("tH: %hu\n"), gcSensorValueHighThreshold);
+	printf_P(PSTR("tL: %hu\n"), gcSensorValueLowThreshold);
 }
 
 void flashLED(byte interval, byte count)
@@ -212,80 +280,83 @@ bool waitForAck(byte destNodeId)
 			continue;
 		}
 
-		data.senderRssi = rssi;
+		data.remoteRssi = rssi;
 
 		if (len > 0)
 		{
 #if defined(USESERIAL2)
-			printf_P(PSTR(" len=%u"), len);
+			printf_P(PSTR(" len=%u "), len);
 #endif
 
 			if (len == sizeof(DataAckPacket))
 			{
+				triggerSend = true;
+				uint32_t count, dCount;
+
 				DataAckPacket* ackPacket = (DataAckPacket*)rf12_data;
-				uint32_t d;
-				uint32_t count;
 
-				switch (ackPacket->countCmd)
+				if (ackPacket->totalVolume != 0)
 				{
-				case CMD_Count: // count in 10l units (0.01m3)
-					gcCounter = ackPacket->count / DEVIDER; // 100l units
-					gcFraction = ackPacket->count % DEVIDER; // fraction
-					gcSignal = 0;
-#if defined(USESERIAL)
-					printf_P(PSTR(" cnt=%lu"), gcCounter);
-#endif
-					triggerSend = true;
-					break;
-
-				case CMD_TotalVolume: // volume in l
-					count = ackPacket->count / 10; // volume to 10l units
-					d = count / DEVIDER - gcCounter;
-					gcCounter += d;
+					count = ackPacket->totalVolume / 10; // volume to 10l units
+					dCount = count / DEVIDER - gcCounter;
+					gcCounter += dCount;
+					gcTodayCounter0 += dCount;
 					gcFraction = count % DEVIDER; // fraction
 					gcSignal = 0;
-					gcTotalVolume = Count2Volume(gcCounter);
-					gcTodayCounter0 += d;
-					gcTodayVolume = Count2Volume(gcCounter - gcTodayCounter0);
-#if defined(USESERIAL)
-					printf_P(PSTR(" cnt=%lu V=%lu Vd=%lu"), gcCounter, gcTotalVolume, gcTodayVolume);
-#endif
-					triggerSend = true;
-					break;
+				}
 
-					// day value reset
-				case CMD_TodayVolume: // volume in l
-					d = Volume2Count(ackPacket->count);
+				if (ackPacket->todayVolume != 0)
+				{
+					if (ackPacket->todayVolume == -1)
+					{
+						gcYesterdayVolume = (gcCounter - gcTodayCounter0) * 100;
+						dCount = 0;
+					}
+					else
+					{
+						dCount = ackPacket->todayVolume / 100; // volume to 100l units
+					}
 
-					if (d == 0)
-						gcYesterdayVolume = gcTodayVolume;
+					gcTodayCounter0 = gcCounter - dCount;
+				}
 
-					gcTodayCounter0 = gcCounter - d;
-					gcTodayVolume = Count2Volume(gcCounter - gcTodayCounter0);
+				if (ackPacket->yesterdayVolume != 0)
+				{
+					gcYesterdayVolume = ackPacket->yesterdayVolume;
+				}
 
-#if defined(USESERIAL)
-					printf_P(PSTR(" Vd=%lu Vy=%lu"), gcTodayVolume, gcYesterdayVolume);
-#endif
-					triggerSend = true;
-					break;
+				if (ackPacket->thresHigh != 0)
+				{
+					gcSensorValueHighThreshold = ackPacket->thresHigh;
+					saveConfig();
+				}
+
+				if (ackPacket->thresLow != 0)
+				{
+					gcSensorValueLowThreshold = ackPacket->thresLow;
+					saveConfig();
 				}
 			}
 			else
 			{
-#if defined(USESERIAL)
-				printf_P(PSTR(" ackSizeMismatch"));
+#if defined(USESERIAL2)
+				printf_P(PSTR("aErr"));
 #endif
 			}
 		}
 
-#if defined(USESERIAL)
-		printf_P(PSTR(" match. loops=%d\n"), loops);
+#if defined(USESERIAL2)
+		printf_P(PSTR(" match. loops=%d"), loops);
 #endif
 		return true;
 	}
 
-#if defined(USESERIAL)
-	printf_P(PSTR(" timeout. loops=%d\n"), loops);
+#if defined(USESERIAL2)
+	printf_P(PSTR(" timeout. loops=%d"), loops);
+#endif
+
+#if defined(USESERIAL) || defined(USESERIAL2)
+	Serial.println();
 #endif
 	return false;
 }
@@ -315,7 +386,7 @@ bool sendTo(byte destNodeId, bool requestAck, void* data, byte datalen)
 
 	rf12_sleep(0);
 
-#if defined(USESERIAL)
+#if defined(USESERIAL2)
 	printf_P(PSTR(" sendTo=%u"), destNodeId);
 	if (requestAck)
 	{
@@ -330,19 +401,28 @@ bool UpdateGasCounterState()
 {
 	bool changed = false;
 
-#if defined(USESERIAL)
-	printf_P(PSTR("MEASURE HALL ... "));
-#endif
+	gcSensorValue = readHallValue();
+	gcSensorPrevState = gcSensorState;
 
-	gcHallValue = readHallValue();
-	gcHallPrevState = gcHallState;
+	// do stats
+	if (gcSensorValue < gcCurMin)
+		gcCurMin = gcSensorValue;
+	if (gcSensorValue > gcCurMax)
+		gcCurMax = gcSensorValue;
+	gcCurAvg += gcSensorValue;
+	gcCurAvgN++;
+	if (gcCurAvgN > AVGNMAX)
+	{
+		gcCurAvg = gcCurAvg / gcCurAvgN;
+		gcCurAvgN = 1;
+	}
 
-	if (gcHallState == 0)
+	if (gcSensorState == 0)
 	{
 		// check state transition LOW -> HIGH
-		if (gcHallValue <= gcHallValueLowThreshold)
+		if (gcSensorValue <= gcSensorValueLowThreshold)
 		{
-			gcHallState = 1;
+			gcSensorState = 1;
 
 			gcFraction++;
 			if (gcFraction == DEVIDER)
@@ -352,73 +432,62 @@ bool UpdateGasCounterState()
 				gcSignal = 1;
 				changed = true;
 			}
+
+			gcHighMax = gcCurMax;
+			gcHighAvg = gcCurAvg / gcCurAvgN;
+
+			// reset stats
+			gcCurMax = gcCurAvg = gcCurMin = gcSensorValue;
+			gcCurAvgN = 1;
 		}
 	}
-	else if (gcHallState == 1)
+	else if (gcSensorState == 1)
 	{
 		// check state transition HIGH -> LOW
-		if (gcHallValue >= gcHallValueHighThreshold)
+		if (gcSensorValue >= gcSensorValueHighThreshold)
 		{
-			gcHallState = 0;
+			gcSensorState = 0;
 			if (gcFraction == DEVIDER / 2)
 			{
 				gcSignal = 0;
 				changed = true;
 			}
+
+			gcLowAvg = gcCurAvg / gcCurAvgN;
+			gcLowMin = gcCurMin;
+
+			// reset stats
+			gcCurMax = gcCurAvg = gcCurMin = gcSensorValue;
+			gcCurAvgN = 1;
 		}
 	}
 	else
 	{
 		// init state
-		if (gcHallValue <= gcHallValueLowThreshold)
-		{
-			gcHallState = 1;
-			changed = true;
-
-#if defined(USESERIAL)
-			printf_P(PSTR(" init S=1\n"));
+		gcSensorState = (gcSensorValue <= gcSensorValueLowThreshold) ? 1 : 0;
+		changed = true;
+#if defined(USESERIAL2)
+		printf_P(PSTR("\ninit S=%u\n"), gcSensorState);
 #endif
-		}
-		else if (gcHallValue >= gcHallValueHighThreshold)
-		{
-			gcHallState = 0;
-			changed = true;
 
-#if defined(USESERIAL)
-			printf_P(PSTR(" init S=0\n"));
-#endif
-		}
+		// init stats
+		gcCurMax = gcCurAvg = gcCurMin = gcSensorValue;
+		gcCurAvgN = 1;
 	}
 
 #if defined(USESERIAL)
-	printf_P(PSTR(" H=%hu st=%u S=%u C=%lu,%u\n"), 
-		gcHallValue, gcHallState, gcSignal, gcCounter, gcFraction);
+	printf_P(PSTR(" H=%hu st=%u F=%u\r"),
+		gcSensorValue, gcSensorState, gcFraction);
 #endif
 
 #if defined(LED_COUNTFLASHS)
-	if (gcHallState != gcHallPrevState)
+	if (gcSensorState != gcSensorPrevState)
 	{
 		flashLED(10, 1);
 	}
 #endif
 
 	return changed;
-}
-
-uint32_t Count2Volume(uint32_t count)
-{
-	return count * 100;
-}
-
-uint32_t Volume2Count(uint32_t volume)
-{
-	return volume / 100;
-}
-
-void CalculateStatistics()
-{
-	gcTotalVolume = Count2Volume(gcCounter);
-	gcTodayVolume = Count2Volume(gcCounter - gcTodayCounter0);
 }
 
 void setup()
@@ -435,6 +504,9 @@ void setup()
 	stdout = &out;
 	printf_P(PSTR("setup\n"));
 #endif
+
+	loadConfig();
+	printConfig();
 
 	rf12_initialize(myNodeID, freq, network);
 	rf12_sleep(0);
@@ -456,26 +528,32 @@ void loop()
 		Sleepy::loseSomeTime(WAITINTERVAL);
 	}
 
-	CalculateStatistics();
 	triggerSend = false;
 
-	data.hall = gcHallValue;
 	data.signal = gcSignal;
 	data.count = gcCounter;
-	data.totalVolume = gcTotalVolume;
-	data.todayVolume = gcTodayVolume;
+	data.sensorMax = gcHighMax;
+	data.sensorAvgHigh = gcHighAvg;
+	data.sensorThresHigh = gcSensorValueHighThreshold;
+	data.sensorThresLow = gcSensorValueLowThreshold;
+	data.sensorAvgLow = gcLowAvg;
+	data.sensorMin = gcLowMin;
+	data.totalVolume = gcCounter * 100;
+	data.todayVolume = (gcCounter - gcTodayCounter0) * 100;
 	data.yesterdayVolume = gcYesterdayVolume;
 
-#if defined(USESERIAL2)
-	printf_P(PSTR("MEASURE VCC ...\n"));
-#endif
 	data.power = readVcc() * 10;
 
 #if defined(USESERIAL)
-	printf_P(PSTR(" H=%hu S=%u C=%lu V=%lu Vd=%lu Vy=%lu U=%hu RSSI(-%d)\n"),
-		data.hall, data.signal, data.count,
+	printf_P(PSTR(" S=%u C=%lu V=%lu Vd=%lu Vy=%lu U=%hu RSSI(-%d)\n"),
+		data.signal, data.count,
 		data.totalVolume, data.todayVolume, data.yesterdayVolume,
-		data.power, data.senderRssi);
+		data.power, data.remoteRssi);
+#endif
+#if defined(USESERIAL)
+	printf_P(PSTR(" H=%hu h=%hu l=%hu L=%hu (tH=%hu tL=%hu)\n"),
+		gcHighMax, gcHighAvg, gcLowAvg, gcLowMin,
+		gcSensorValueHighThreshold, gcSensorValueLowThreshold);
 #endif
 
 #if defined(USESERIAL2)
