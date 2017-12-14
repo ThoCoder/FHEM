@@ -64,7 +64,7 @@ uint16_t stCurAvgN = 1;
 #define CMD_SensorAvgLow 185
 #define CMD_SensorMin 186
 
-struct LongDataPacket
+struct DataPacket
 {
 	byte sensorMaxCmd;
 	uint16_t sensorMax;			// 0 .. 1023
@@ -89,7 +89,7 @@ struct LongDataPacket
 	byte remoteRssiCmd;
 	byte remoteRssi;	// dB * -1
 
-	LongDataPacket()
+	DataPacket()
 	{
 		sensorMaxCmd = CMD_SensorMax;
 		sensorAvgHighCmd = CMD_SensorAvgHigh;
@@ -107,12 +107,14 @@ struct LongDataPacket
 
 struct DataAckPacket
 {
-	byte countCmd;		// CMD_TotalVolume to set total counter (ml)
-						// CMD_TodayVolume to reset day counter
-	uint32_t count;
+	uint32_t totalVolume;
+	uint32_t todayVolume;
+	uint32_t yesterdayVolume;
+	uint16_t thresHigh;
+	uint16_t thresLow;
 };
 
-LongDataPacket longData;
+DataPacket data;
 
 #if defined(USESERIAL) || defined(USESERIAL2)
 
@@ -296,31 +298,19 @@ bool UpdateCounterState()
 	else
 	{
 		// init state
-		if (wcsSensorValue <= wcsSensorValueLowThreshold)
-		{
-			wcsSensorState = 1;
-			changed = true;
-
-#if defined(USESERIAL)
-			printf_P(PSTR("\ninit S=1\n"));
+		wcsSensorState = (wcsSensorValue <= wcsSensorValueLowThreshold) ? 1 : 0;
+		changed = true;
+#if defined(USESERIAL2)
+		printf_P(PSTR("\ninit S=%u\n"), wcsSensorState);
 #endif
-			// reset stats
-			stCurMax = stCurAvg = stCurMin = wcsSensorValue;
-			stCurAvgN = 1;
-		}
-		else if (wcsSensorValue >= wcsSensorValueHighThreshold)
-		{
-			wcsSensorState = 0;
-			changed = true;
 
-#if defined(USESERIAL)
-			printf_P(PSTR("\ninit S=0\n"));
-#endif
-		}
+		// init stats
+		stCurMax = stCurAvg = stCurMin = wcsSensorValue;
+		stCurAvgN = 1;
 	}
 
 #if defined(USESERIAL)
-	printf_P(PSTR(" H=%d RTT=%lu \r"), wcsSensorValue, rtt);
+	printf_P(PSTR(" H=%d RTT=%lu\r"), wcsSensorValue, rtt);
 #endif
 
 #if defined(LED_COUNTFLASHS)
@@ -371,80 +361,75 @@ bool waitForAck(byte destNodeId)
 		if (hdr != (RF12_HDR_CTL | RF12_HDR_DST | myNodeID))
 		{
 #if defined(USESERIAL2)
-			printf_P(PSTR(" notForMe"));
+			printf_P(PSTR(" notMe"));
 #endif
 			continue;
 		}
 
-		longData.remoteRssi = rssi;
+		data.remoteRssi = rssi;
 
 		if (len > 0)
 		{
-#if defined(USESERIAL)
-			printf_P(PSTR(" len=%u"), len);
+#if defined(USESERIAL2)
+			printf_P(PSTR(" len=%u "), len);
 #endif
 
 			if (len == sizeof(DataAckPacket))
 			{
+				triggerSend = true;
+
 				DataAckPacket* ackPacket = (DataAckPacket*)rf12_data;
-				uint32_t d;
 
-				switch (ackPacket->countCmd)
+				if (ackPacket->totalVolume != 0)
 				{
-				case CMD_TotalVolume:
-					wcsTotalVolume = ackPacket->count;
-#if defined(USESERIAL)
-					printf_P(PSTR(" total=%lu"), wcsTotalVolume);
-#endif
-					triggerSend = true;
-					break;
+					wcsTotalVolume = ackPacket->totalVolume;
+				}
 
-					// day value reset
-				case CMD_TodayVolume:
-					if (ackPacket->count == 0)
+				if (ackPacket->todayVolume != 0)
+				{
+					if (ackPacket->todayVolume == -1)
 						wcsYesterdayVolume = wcsTodayVolume;
-					wcsTodayVolume = ackPacket->count;
-#if defined(USESERIAL)
-					printf_P(PSTR(" today=%lu yesterday=%lu"), wcsTodayVolume, wcsYesterdayVolume);
-#endif
-					triggerSend = true;
-					break;
 
-				case CMD_SensorThresHigh:
-					wcsSensorValueHighThreshold = ackPacket->count;
-#if defined(USESERIAL)
-					printf_P(PSTR(" high=%hu"), wcsSensorValueHighThreshold);
-#endif
-					saveConfig();
-					triggerSend = true;
-					break;
+					wcsTodayVolume = ackPacket->todayVolume;
+				}
 
-				case CMD_SensorThresLow:
-					wcsSensorValueLowThreshold = ackPacket->count;
-#if defined(USESERIAL)
-					printf_P(PSTR(" low=%hu"), wcsSensorValueLowThreshold);
-#endif
+				if (ackPacket->yesterdayVolume != 0)
+				{
+					wcsYesterdayVolume = ackPacket->yesterdayVolume;
+				}
+
+				if (ackPacket->thresHigh != 0)
+				{
+					wcsSensorValueHighThreshold = ackPacket->thresHigh;
 					saveConfig();
-					triggerSend = true;
-					break;
+				}
+
+				if (ackPacket->thresLow != 0)
+				{
+					wcsSensorValueLowThreshold = ackPacket->thresLow;
+					saveConfig();
 				}
 			}
 			else
 			{
-#if defined(USESERIAL)
-				printf_P(PSTR(" ackSizeMismatch"));
+#if defined(USESERIAL2)
+				printf_P(PSTR("aErr"));
 #endif
 			}
 		}
 
 #if defined(USESERIAL2)
-		printf_P(PSTR(" match. loops=%d\n"), loops);
+		printf_P(PSTR(" match. loops=%d"), loops);
 #endif
 		return true;
 	}
 
 #if defined(USESERIAL2)
-	printf_P(PSTR(" timeout. loops=%d\n"), loops);
+	printf_P(PSTR(" timeout. loops=%d"), loops);
+#endif
+
+#if defined(USESERIAL) || defined(USESERIAL2)
+	Serial.println();
 #endif
 	return false;
 }
@@ -474,7 +459,7 @@ bool sendTo(byte destNodeId, bool requestAck, void* data, byte datalen)
 
 	rf12_sleep(0);
 
-#if defined(USESERIAL)
+#if defined(USESERIAL2)
 	printf_P(PSTR(" sendTo=%u"), destNodeId);
 	if (requestAck)
 	{
@@ -533,25 +518,22 @@ void loop()
 
 	triggerSend = false;
 
-	longData.sensorMax = stHighMax;
-	longData.sensorAvgHigh = stHighAvg;
-	longData.sensorThresHigh = wcsSensorValueHighThreshold;
-	longData.sensorThresLow = wcsSensorValueLowThreshold;
-	longData.sensorAvgLow = stLowAvg;
-	longData.sensorMin = stLowMin;
-	longData.totalVolume = wcsTotalVolume;
-	longData.todayVolume = wcsTodayVolume;
-	longData.yesterdayVolume = wcsYesterdayVolume;
+	data.sensorMax = stHighMax;
+	data.sensorAvgHigh = stHighAvg;
+	data.sensorThresHigh = wcsSensorValueHighThreshold;
+	data.sensorThresLow = wcsSensorValueLowThreshold;
+	data.sensorAvgLow = stLowAvg;
+	data.sensorMin = stLowMin;
+	data.totalVolume = wcsTotalVolume;
+	data.todayVolume = wcsTodayVolume;
+	data.yesterdayVolume = wcsYesterdayVolume;
 
-#if defined(USESERIAL2)
-	printf_P(PSTR("MEASURE VCC ...\n"));
-#endif
-	longData.power = readVcc() * 10;
+	data.power = readVcc() * 10;
 
 #if defined(USESERIAL)
 	printf_P(PSTR("\n V=%lu dayV=%lu ydayV=%lu U=%hu RSSI(-%d)\n"),
-		longData.totalVolume, longData.todayVolume, longData.yesterdayVolume,
-		longData.power, longData.remoteRssi);
+		data.totalVolume, data.todayVolume, data.yesterdayVolume,
+		data.power, data.remoteRssi);
 #endif
 #if defined(USESERIAL)
 	printf_P(PSTR(" H=%hu h=%hu l=%hu L=%hu (th=%hu tl=%hu)\n"),
@@ -559,8 +541,8 @@ void loop()
 		wcsSensorValueHighThreshold, wcsSensorValueLowThreshold);
 #endif
 
-#if defined(USESERIAL)
-	printf_P(PSTR("SEND ...\n"));
+#if defined(USESERIAL2)
+	printf_P(PSTR("SEND\n"));
 #endif
 	word retryDelay = RETRYDELAY;
 	byte retry = 0;
@@ -568,7 +550,7 @@ void loop()
 
 	while (true)
 	{
-		if (sendTo(0, true, &longData, sizeof(longData)))
+		if (sendTo(0, true, &data, sizeof(data)))
 		{
 			success = true;
 			break;
@@ -580,7 +562,7 @@ void loop()
 			break;
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" SEND FAILED. RETRY IN %u ms\n"), retryDelay);
+		printf_P(PSTR(" RETRY %u ms\n"), retryDelay);
 #endif
 		delay(retryDelay);
 		retryDelay <<= 1;
@@ -593,7 +575,7 @@ void loop()
 #endif
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" SENT OK. R=%u\n"), retry);
+		printf_P(PSTR(" OK. R=%u\n"), retry);
 #endif
 	}
 	else
@@ -603,7 +585,7 @@ void loop()
 #endif
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" FAILED TO SEND AFTER %u RETRIES.\n"), RETRIES);
+		printf_P(PSTR(" FAILED (%u)\n"), RETRIES);
 #endif
 	}
 
