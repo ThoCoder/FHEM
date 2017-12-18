@@ -1,7 +1,7 @@
 #define USESERIAL
 //#define USESERIAL2
 #define LED_SENDFLASHS
-//#define CALCULATEPOWER
+#define CALCULATEPOWER
 
 #define RF69_COMPAT 1
 #include <JeeLib.h>
@@ -15,6 +15,7 @@
 #define network 212
 #define freq RF12_868MHZ
 #define ACK_TIME 50
+#define SENDCOOLDOWN 60000
 #define WAITTIMEOUT_INIT 10000
 #define WAITTIMEOUT_LONG 300000
 #define WAITTIMEOUT_SHORT 60000
@@ -37,10 +38,10 @@ uint16_t esSensorValueHighThreshold = MIDLEVEL + THRESHOLD;
 uint16_t esSensorValueLowThreshold = MIDLEVEL - THRESHOLD;
 uint32_t esCounter = 0;
 uint32_t esTodayCounter0 = 0;
-uint32_t esDeltaCounter0Tick = 0;
 uint32_t esYesterdayEnergy = 0;
 #if defined(CALCULATEPOWER)
 uint32_t esDeltaCounter0 = 0;
+uint32_t esDeltaCounter0Tick = 0;
 #endif
 
 
@@ -130,9 +131,13 @@ DataPacket data;
 
 #if defined(USESERIAL) || defined(USESERIAL2)
 
+TinyDebugSerial serial = TinyDebugSerial();
+
 int printChar(char var, FILE *stream) {
-	if (var == '\n') Serial.print('\r');
-	Serial.print(var);
+	//if (var == '\n') Serial.print('\r');
+	//Serial.print(var);
+	if (var == '\n') serial.write('\r');
+	serial.write(var);
 	return 0;
 }
 
@@ -336,14 +341,18 @@ bool UpdateCounterState()
 uint32_t Count2Energy(uint32_t count)
 {
 	return (uint32_t)(((uint64_t)count * 1000) / 75);
-	//return (uint32_t)((float)count * WHPERCOUNT);
 }
 
 uint32_t Energy2Count(uint32_t volume)
 {
 	return (uint32_t)(((uint64_t)volume * 75) / 1000);
-	//return (uint32_t)((float)volume * COUNTSPERWH);
 }
+
+uint16_t Count2Power(uint32_t count, uint32_t dt)
+{
+	return (uint16_t)(((uint64_t)count * 1000 * 3600000) / 75 / dt);
+}
+
 
 bool waitForAck(byte destNodeId)
 {
@@ -513,7 +522,8 @@ void setup()
 	digitalWrite(SENSOR_POWER, LOW);
 
 #if defined(USESERIAL) || defined(USESERIAL2)
-	Serial.begin(38400);
+	//Serial.begin(38400);
+	serial.begin(38400);
 	fdev_setup_stream(&out, printChar, NULL, _FDEV_SETUP_WRITE);
 	stdout = &out;
 	printf_P(PSTR("setup\n"));
@@ -536,14 +546,19 @@ void loop()
 
 	while (true)
 	{
-		if (UpdateCounterState())
-			break; // send on counter change
+		bool changed = UpdateCounterState();
 
 		if (triggerSend)
 			break;
 
 		t = millis();
 		uint32_t dt = t - t0;
+		if (dt < SENDCOOLDOWN)
+			continue;
+
+		if (changed)
+			break;
+
 		if (dt >= waitTimeout)
 			break; // send every WAITTIMEOUT interval
 
@@ -563,7 +578,8 @@ void loop()
 	data.todayEnergy = Count2Energy(esCounter - esTodayCounter0);
 	data.yesterdayEnergy = esYesterdayEnergy;
 #if defined(CALCULATEPOWER)
-	data.currentPower = 0;
+	uint32_t pdt = t - esDeltaCounter0Tick;
+	data.currentPower = (pdt != 0) ? Count2Power(esCounter - esDeltaCounter0, pdt) : 0;
 	esDeltaCounter0 = esCounter;
 	esDeltaCounter0Tick = t;
 #else
@@ -573,8 +589,9 @@ void loop()
 	data.power = readVcc() * 10;
 
 #if defined(USESERIAL)
-	printf_P(PSTR("\n E=%lu Ed=%lu Ey=%lu U=%hu RSSI(-%d)\n"),
+	printf_P(PSTR("\n E=%lu Eu=%lu Ey=%lu P=%hu U=%hu RSSI(-%d)\n"),
 		data.totalEnergy, data.todayEnergy, data.yesterdayEnergy,
+		data.currentPower,
 		data.power, data.remoteRssi);
 #endif
 #if defined(USESERIAL)
