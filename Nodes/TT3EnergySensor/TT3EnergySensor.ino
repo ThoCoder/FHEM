@@ -1,6 +1,7 @@
 #define USESERIAL
 //#define USESERIAL2
 #define LED_SENDFLASHS
+//#define CALCULATEPOWER
 
 #define RF69_COMPAT 1
 #include <JeeLib.h>
@@ -10,14 +11,14 @@
 #define SENSOR_PIN 7//3
 #define SENSOR_POWER 10
 
-#define myNodeID 23
-#define network 99
+#define myNodeID 24
+#define network 212
 #define freq RF12_868MHZ
 #define ACK_TIME 50
 #define WAITTIMEOUT_INIT 10000
 #define WAITTIMEOUT_LONG 300000
 #define WAITTIMEOUT_SHORT 60000
-#define MEASURE_INTERVAL 50
+#define MEASURE_INTERVAL 43
 #define MIDLEVEL 250
 #define THRESHOLD 50
 
@@ -36,9 +37,12 @@ uint16_t esSensorValueHighThreshold = MIDLEVEL + THRESHOLD;
 uint16_t esSensorValueLowThreshold = MIDLEVEL - THRESHOLD;
 uint32_t esCounter = 0;
 uint32_t esTodayCounter0 = 0;
-uint32_t esDeltaCounter0 = 0;
 uint32_t esDeltaCounter0Tick = 0;
 uint32_t esYesterdayEnergy = 0;
+#if defined(CALCULATEPOWER)
+uint32_t esDeltaCounter0 = 0;
+#endif
+
 
 uint16_t stHighMax = MIDLEVEL + THRESHOLD;
 uint16_t stHighAvg = MIDLEVEL + THRESHOLD;
@@ -47,7 +51,7 @@ uint16_t stLowMin = MIDLEVEL - THRESHOLD;
 uint16_t stCurMax, stCurMin;
 uint32_t stCurAvg;
 uint16_t stCurAvgN = 1;
-#define AVGNMAX 8500
+#define AVGNMAX 6000
 
 #define CMD_Count 195
 #define CMD_TotalEnergy 178
@@ -275,8 +279,8 @@ bool UpdateCounterState()
 #if defined(USESERIAL2)
 			printf_P(PSTR("\nS=1\n"));
 #endif
-			stHighMax = stCurMax;
-			stHighAvg = stCurAvg / stCurAvgN;
+			stLowAvg = stCurAvg / stCurAvgN;
+			stLowMin = stCurMin;
 
 			// reset stats
 			stCurMax = stCurAvg = stCurMin = esSensorValue;
@@ -293,9 +297,8 @@ bool UpdateCounterState()
 #if defined(USESERIAL2)
 			printf_P(PSTR("\nS=0\n"));
 #endif
-
-			stLowAvg = stCurAvg / stCurAvgN;
-			stLowMin = stCurMin;
+			stHighMax = stCurMax;
+			stHighAvg = stCurAvg / stCurAvgN;
 
 			// reset stats
 			stCurMax = stCurAvg = stCurMin = esSensorValue;
@@ -317,7 +320,7 @@ bool UpdateCounterState()
 	}
 
 #if defined(USESERIAL)
-	printf_P(PSTR(" H=%d S=%u RTT=%lu\r"), esSensorValue, esSensorState, rtt);
+	printf_P(PSTR(" H=%d S=%u RTT=%lu  \r"), esSensorValue, esSensorState, rtt);
 #endif
 
 #if defined(LED_COUNTFLASHS)
@@ -405,7 +408,9 @@ bool waitForAck(byte destNodeId)
 					dCount = Energy2Count(ackPacket->totalEnergy) - esCounter;
 					esCounter += dCount;
 					esTodayCounter0 += dCount;
+#if defined(CALCULATEPOWER)
 					esDeltaCounter0 += dCount;
+#endif
 				}
 
 				if (ackPacket->todayEnergy != 0)
@@ -557,10 +562,13 @@ void loop()
 	data.totalEnergy = Count2Energy(esCounter);
 	data.todayEnergy = Count2Energy(esCounter - esTodayCounter0);
 	data.yesterdayEnergy = esYesterdayEnergy;
-	
-	data.currentPower = 0; 
-	esDeltaCounter0 = esCounter; 
+#if defined(CALCULATEPOWER)
+	data.currentPower = 0;
+	esDeltaCounter0 = esCounter;
 	esDeltaCounter0Tick = t;
+#else
+	data.currentPower = 0;
+#endif
 
 	data.power = readVcc() * 10;
 
@@ -584,7 +592,7 @@ void loop()
 		flashLED(10, 1);
 #endif
 #if defined(USESERIAL)
-		printf_P(PSTR(" OK.\n"));
+		printf_P(PSTR("OK\n"));
 #endif
 		waitTimeout = WAITTIMEOUT_LONG;
 	}
@@ -594,8 +602,8 @@ void loop()
 		flashLED(50, 3);
 #endif
 #if defined(USESERIAL)
-		printf_P(PSTR(" ERR\n"));
+		printf_P(PSTR("ERR\n"));
 #endif
-		waitTimeout = WAITTIMEOUT_LONG;
+		waitTimeout = WAITTIMEOUT_SHORT;
 	}
 }
