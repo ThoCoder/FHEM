@@ -1,7 +1,6 @@
 #define USESERIAL
 //#define USESERIAL2
 #define LED_SENDFLASHS
-#define CALCULATEPOWER
 
 #define RF69_COMPAT 1
 #include <JeeLib.h>
@@ -12,19 +11,18 @@
 #define SENSOR_POWER 10
 
 #define myNodeID 24
-#define network 212
+#define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
-#define SENDCOOLDOWN 60000
-#define WAITTIMEOUT_INIT 10000
-#define WAITTIMEOUT_LONG 300000
+#define SENDCOOLDOWN 30000
+#define WAITTIMEOUT_LONG 600000
 #define WAITTIMEOUT_SHORT 60000
 #define MEASURE_INTERVAL 43
 #define MIDLEVEL 250
 #define THRESHOLD 50
 
 bool triggerSend = false;
-uint32_t waitTimeout = WAITTIMEOUT_INIT;
+uint32_t waitTimeout;
 
 // ThoGateway::JeeLink V2.1
 //   reset day counter : <nodeID>,189,0Dm
@@ -39,10 +37,8 @@ uint16_t esSensorValueLowThreshold = MIDLEVEL - THRESHOLD;
 uint32_t esCounter = 0;
 uint32_t esTodayCounter0 = 0;
 uint32_t esYesterdayEnergy = 0;
-#if defined(CALCULATEPOWER)
 uint32_t esDeltaCounter0 = 0;
 uint32_t esDeltaCounter0Tick = 0;
-#endif
 
 
 uint16_t stHighMax = MIDLEVEL + THRESHOLD;
@@ -353,7 +349,6 @@ uint16_t Count2Power(uint32_t count, uint32_t dt)
 	return (uint16_t)(((uint64_t)count * 1000 * 3600000) / 75 / dt);
 }
 
-
 bool waitForAck(byte destNodeId)
 {
 #if defined(USESERIAL2)
@@ -417,9 +412,7 @@ bool waitForAck(byte destNodeId)
 					dCount = Energy2Count(ackPacket->totalEnergy) - esCounter;
 					esCounter += dCount;
 					esTodayCounter0 += dCount;
-#if defined(CALCULATEPOWER)
 					esDeltaCounter0 += dCount;
-#endif
 				}
 
 				if (ackPacket->todayEnergy != 0)
@@ -553,10 +546,8 @@ void loop()
 
 		t = millis();
 		uint32_t dt = t - t0;
-		if (dt < SENDCOOLDOWN)
-			continue;
 
-		if (changed)
+		if (changed && (dt >= SENDCOOLDOWN))
 			break;
 
 		if (dt >= waitTimeout)
@@ -577,19 +568,14 @@ void loop()
 	data.totalEnergy = Count2Energy(esCounter);
 	data.todayEnergy = Count2Energy(esCounter - esTodayCounter0);
 	data.yesterdayEnergy = esYesterdayEnergy;
-#if defined(CALCULATEPOWER)
 	uint32_t pdt = t - esDeltaCounter0Tick;
 	data.currentPower = (pdt != 0) ? Count2Power(esCounter - esDeltaCounter0, pdt) : 0;
-	esDeltaCounter0 = esCounter;
-	esDeltaCounter0Tick = t;
-#else
-	data.currentPower = 0;
-#endif
 
 	data.power = readVcc() * 10;
 
 #if defined(USESERIAL)
-	printf_P(PSTR("\n E=%lu Eu=%lu Ey=%lu P=%hu U=%hu RSSI(-%d)\n"),
+	printf_P(PSTR("\n C=%lu E=%lu Ed=%lu Ey=%lu P=%hu U=%hu RSSI(-%d)\n"),
+		esCounter,
 		data.totalEnergy, data.todayEnergy, data.yesterdayEnergy,
 		data.currentPower,
 		data.power, data.remoteRssi);
@@ -612,6 +598,9 @@ void loop()
 		printf_P(PSTR("OK\n"));
 #endif
 		waitTimeout = WAITTIMEOUT_LONG;
+
+		esDeltaCounter0 = esCounter;
+		esDeltaCounter0Tick = t;
 	}
 	else
 	{
