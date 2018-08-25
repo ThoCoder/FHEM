@@ -20,8 +20,7 @@
 #define WAITTIMEOUT_SHORT 60000
 
 #define PULSETIMEOUT 1000
-const float COUNTSPERMILLILITRE = 10.300;
-const float MILLILITREPERCOUNT = 1.0 / COUNTSPERMILLILITRE;
+uint32_t COUNTSPERLITRE = 10300;
 
 bool triggerSend = false;
 uint32_t waitTimeout = WAITTIMEOUT_INIT;
@@ -206,10 +205,17 @@ bool waitForAck(byte destNodeId)
 				
 				if (ackPacket->totalVolume != 0)
 				{
-					dCount = Volume2Count(ackPacket->totalVolume) - fsCounter;
-					fsCounter += dCount;
-					fsDeltaCounter0 += dCount;
-					fsTodayCounter0 += dCount;
+					if (ackPacket->totalVolume == -1)
+					{
+						COUNTSPERLITRE = ackPacket->todayVolume;
+					}
+					else
+					{
+						dCount = Volume2Count(ackPacket->totalVolume) - fsCounter;
+						fsCounter += dCount;
+						fsDeltaCounter0 += dCount;
+						fsTodayCounter0 += dCount;
+					}
 				}
 
 				if (ackPacket->todayVolume != 0)
@@ -334,12 +340,12 @@ bool UpdateCounterState()
 
 uint32_t Count2Volume(uint32_t count)
 {
-	return (uint32_t)((float)count * MILLILITREPERCOUNT);
+	return (uint32_t)((uint64_t)count * 1000 / COUNTSPERLITRE);
 }
 
 uint32_t Volume2Count(uint32_t volume)
 {
-	return (uint32_t)((float)volume * COUNTSPERMILLILITRE);
+	return (uint32_t)((uint64_t)volume * COUNTSPERLITRE / 1000);
 }
 
 void setup()
