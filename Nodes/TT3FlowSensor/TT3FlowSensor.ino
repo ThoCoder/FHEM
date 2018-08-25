@@ -20,7 +20,7 @@
 #define WAITTIMEOUT_SHORT 60000
 
 #define PULSETIMEOUT 1000
-uint32_t COUNTSPERLITRE = 10300;
+uint32_t COUNTSPERLITRE = 9530;
 
 bool triggerSend = false;
 uint32_t waitTimeout = WAITTIMEOUT_INIT;
