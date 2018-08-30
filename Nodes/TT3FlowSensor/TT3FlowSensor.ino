@@ -4,6 +4,7 @@
 
 #define RF69_COMPAT 1
 #include <JeeLib.h>
+#include"avr\eeprom.h"
 
 #define LED 7
 #define SENSOR_PIN 9
@@ -26,13 +27,13 @@ bool triggerSend = false;
 uint32_t waitTimeout = WAITTIMEOUT_INIT;
 
 // ThoGateway::JeeLink V2.1
-//   reset day counter : <nodeID>,189,0Dm
-//   set counter       : <nodeID>,195,nnnnnnDm
-//                       nnnnnn .. counter value to set in (10300/L) units
-
+//   set counters       : <nodeID>,<totalVolume>D,<todayVolume>D,<yesterdayVolume>Dm
+//   reset day counter  : <nodeID>,0D,255,255,255,255,0Dm
+//   set countsPerLitre : <nodeID>,255,255,255,255,<countsPerLitre>Dm
+//
 // all volume values are in ml calculated from counter values 
 //   volume = 1000 * counter / COUNTSPERLITRE)
-
+//
 // Q values in ml/min (volumetric flow rate)
 
 byte fsState = 0;
@@ -110,6 +111,40 @@ FILE out = { 0 };
 
 ISR(WDT_vect) {
 	Sleepy::watchdogEvent();  // interrupt handler for JeeLabs Sleepy power saving
+}
+
+#define CONFIG_EEPROM_ADDR ((uint8_t*)0x60)
+#define CONFIG_MAGIC 0x11223355
+struct _config
+{
+	long magic;
+	uint32_t fsCountsPerLitre;
+} config;
+
+void loadConfig()
+{
+	eeprom_read_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
+	if (config.magic != CONFIG_MAGIC)
+	{
+		saveConfig();
+	}
+	else
+	{
+		COUNTSPERLITRE = config.fsCountsPerLitre;
+	}
+}
+
+void saveConfig()
+{
+	config.magic = CONFIG_MAGIC;
+	config.fsCountsPerLitre = COUNTSPERLITRE;
+
+	eeprom_update_block(&config, CONFIG_EEPROM_ADDR, sizeof(config));
+}
+
+void printConfig()
+{
+	printf_P(PSTR("cpl: %lu\n"), COUNTSPERLITRE);
 }
 
 void flashLED(byte interval, byte count)
@@ -208,6 +243,7 @@ bool waitForAck(byte destNodeId)
 					if (ackPacket->totalVolume == -1)
 					{
 						COUNTSPERLITRE = ackPacket->todayVolume;
+						saveConfig();
 					}
 					else
 					{
@@ -218,7 +254,7 @@ bool waitForAck(byte destNodeId)
 					}
 				}
 
-				if (ackPacket->todayVolume != 0)
+				if ((ackPacket->totalVolume != -1) && (ackPacket->todayVolume != 0))
 				{
 					if (ackPacket->todayVolume == -1)
 					{
@@ -283,7 +319,7 @@ bool sendTo(byte destNodeId, bool requestAck, void* data, byte datalen)
 
 	rf12_sleep(0);
 
-#if defined(USESERIAL)
+#if defined(USESERIAL2)
 	printf_P(PSTR(" sendTo=%u"), destNodeId);
 	if (requestAck)
 	{
@@ -310,7 +346,7 @@ bool UpdateCounterState()
 		if (fsCounterRunning == 0)
 		{
 #if defined(USESERIAL)
-			printf_P(PSTR("CTR ON\n"));
+			printf_P(PSTR("1\n"));
 #endif
 			// start counting
 			fsCounterRunning = 1;
@@ -327,7 +363,7 @@ bool UpdateCounterState()
 		if (dt >= PULSETIMEOUT)
 		{
 #if defined(USESERIAL)
-			printf_P(PSTR("CTR OFF\n"));
+			printf_P(PSTR("0\n"));
 #endif
 			// stop counting
 			fsCounterRunning = 0;
@@ -362,6 +398,9 @@ void setup()
 	stdout = &out;
 	printf_P(PSTR("setup\n"));
 #endif
+
+	loadConfig();
+//	printConfig();
 
 	rf12_initialize(myNodeID, freq, network);
 	rf12_sleep(0);
@@ -410,8 +449,8 @@ void loop()
 	data.power = readVcc() * 10;
 
 #if defined(USESERIAL)
-	printf_P(PSTR(" C=%lu V=%lu dV=%lu Vd=%lu Vy=%lu Q=%lu U=%hu RSSI(-%d)\n"),
-		data.count,
+	printf_P(PSTR(" C=%lu (%lu) V=%lu dV=%lu Vd=%lu Vy=%lu Q=%lu U=%hu (-%d)\n"),
+		data.count, COUNTSPERLITRE,
 		data.totalVolume, data.deltaVolume, data.todayVolume, data.yesterdayVolume,
 		data.volumePerMin,
 		data.power, data.remoteRssi);
@@ -438,7 +477,7 @@ void loop()
 			break;
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" RETRY %u ms\n"), retryDelay);
+		printf_P(PSTR(" R=%u\n"), retryDelay);
 #endif
 		delay(retryDelay);
 		retryDelay <<= 1;
@@ -451,7 +490,7 @@ void loop()
 #endif
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" OK. R=%u\n"), retry);
+		printf_P(PSTR("OK %u\n"), retry);
 #endif
 	}
 	else
@@ -461,7 +500,7 @@ void loop()
 #endif
 
 #if defined(USESERIAL)
-		printf_P(PSTR(" FAILED (%u)\n"), RETRIES);
+		printf_P(PSTR("ERR %u\n"), RETRIES);
 #endif
 	}
 
