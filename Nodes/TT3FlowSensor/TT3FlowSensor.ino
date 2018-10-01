@@ -1,6 +1,9 @@
 #define USESERIAL
 //#define USESERIAL2
-#define LED_SENDFLASHS
+#define USELEDFLASHS
+#define USECONFIG
+#define USERF
+#define USEFUNCTION
 
 #define RF69_COMPAT 1
 #include <JeeLib.h>
@@ -21,7 +24,6 @@
 #define WAITTIMEOUT_SHORT 60000
 
 #define PULSETIMEOUT 1000
-uint32_t COUNTSPERLITRE = 9530;
 
 bool triggerSend = false;
 uint32_t waitTimeout = WAITTIMEOUT_INIT;
@@ -36,6 +38,7 @@ uint32_t waitTimeout = WAITTIMEOUT_INIT;
 //
 // Q values in ml/min (volumetric flow rate)
 
+uint32_t COUNTSPERLITRE = 9530;
 byte fsState = 0;
 uint32_t fsCounter = 0;
 uint32_t fsCounterTick = 0;
@@ -113,6 +116,8 @@ ISR(WDT_vect) {
 	Sleepy::watchdogEvent();  // interrupt handler for JeeLabs Sleepy power saving
 }
 
+#if defined(USECONFIG)
+
 #define CONFIG_EEPROM_ADDR ((uint8_t*)0x60)
 #define CONFIG_MAGIC 0x11223355
 struct _config
@@ -146,7 +151,9 @@ void printConfig()
 {
 	printf_P(PSTR("cpl: %lu\n"), COUNTSPERLITRE);
 }
+#endif
 
+#if defined(USELEDFLASHS)
 void flashLED(byte interval, byte count)
 {
 	for (byte n = 0; n < count; n++)
@@ -159,6 +166,7 @@ void flashLED(byte interval, byte count)
 		digitalWrite(LED, LOW);
 	}
 }
+#endif
 
 long readVcc()
 {
@@ -180,6 +188,7 @@ long readVcc()
 	return result;
 }
 
+#if defined(USERF)
 bool waitForAck(byte destNodeId)
 {
 #if defined(USESERIAL2)
@@ -237,21 +246,24 @@ bool waitForAck(byte destNodeId)
 
 				DataAckPacket* ackPacket = (DataAckPacket*)rf12_data;
 				uint32_t dCount;
-				
+
+#if defined(USEFUNCTION)
 				if (ackPacket->totalVolume != 0)
 				{
-					if (ackPacket->totalVolume == -1)
-					{
-						COUNTSPERLITRE = ackPacket->todayVolume;
-						saveConfig();
-					}
-					else
+					if (ackPacket->totalVolume != -1)
 					{
 						dCount = Volume2Count(ackPacket->totalVolume) - fsCounter;
 						fsCounter += dCount;
 						fsDeltaCounter0 += dCount;
 						fsTodayCounter0 += dCount;
 					}
+#if defined(USECONFIG)
+					else
+					{
+						COUNTSPERLITRE = ackPacket->todayVolume;
+						saveConfig();
+					}
+#endif
 				}
 
 				if ((ackPacket->totalVolume != -1) && (ackPacket->todayVolume != 0))
@@ -273,6 +285,7 @@ bool waitForAck(byte destNodeId)
 				{
 					fsYesterdayVolume = ackPacket->yesterdayVolume;
 				}
+#endif
 			}
 			else
 			{
@@ -329,7 +342,9 @@ bool sendTo(byte destNodeId, bool requestAck, void* data, byte datalen)
 #endif
 	return acked;
 }
+#endif
 
+#if defined(USEFUNCTION)
 bool UpdateCounterState()
 {
 	bool stateChanged = false;
@@ -383,6 +398,7 @@ uint32_t Volume2Count(uint32_t volume)
 {
 	return (uint32_t)((uint64_t)volume * COUNTSPERLITRE / 1000);
 }
+#endif
 
 void setup()
 {
@@ -399,16 +415,22 @@ void setup()
 	printf_P(PSTR("setup\n"));
 #endif
 
+#if defined(USECONFIG)
 	loadConfig();
 //	printConfig();
+#endif
 
+#if defined(USERF)
 	rf12_initialize(myNodeID, freq, network);
 	rf12_sleep(0);
+#endif
 
 	delay(1000);
 	digitalWrite(LED, LOW);
 
+#if defined(USEFUNCTION)
 	fsState = digitalRead(SENSOR_PIN);
+#endif
 }
 
 void loop()
@@ -417,11 +439,13 @@ void loop()
 
 	while (true)
 	{
+#if defined(USEFUNCTION)
 		if (UpdateCounterState())
 			break; // send when pump operation stopped
 
 		if (fsCounterRunning == 1)
 			continue; // do not send while counting
+#endif
 
 		if (triggerSend)
 			break;
@@ -434,6 +458,7 @@ void loop()
 
 	triggerSend = false;
 
+#if defined(USEFUNCTION)
 	data.count = fsCounter;
 	data.totalVolume = Count2Volume(fsCounter);
 	data.deltaVolume = Count2Volume(fsCounter - fsDeltaCounter0); 
@@ -442,11 +467,14 @@ void loop()
 	data.yesterdayVolume = fsYesterdayVolume;
 	uint32_t dt = fsCounterTick - fsCounterStartTick;
 	data.volumePerMin = ((dt > 0) && (data.deltaVolume > 0)) ? 60000 * data.deltaVolume / dt : 0;
+#endif
 
+#if defined(USERF)
 #if defined(USESERIAL2)
 	printf_P(PSTR("MEASURE VCC ...\n"));
 #endif
 	data.power = readVcc() * 10;
+#endif
 
 #if defined(USESERIAL)
 	printf_P(PSTR(" C=%lu (%lu) V=%lu dV=%lu Vd=%lu Vy=%lu Q=%lu U=%hu (-%d)\n"),
@@ -463,6 +491,7 @@ void loop()
 	byte retry = 0;
 	bool success = false;
 
+#if defined(USERF)
 	while (true)
 	{
 		if (sendTo(0, true, &data, sizeof(data)))
@@ -482,10 +511,11 @@ void loop()
 		delay(retryDelay);
 		retryDelay <<= 1;
 	}
+#endif
 
 	if (success)
 	{
-#if defined(LED_SENDFLASHS)
+#if defined(USELEDFLASHS)
 		flashLED(10, 1);
 #endif
 
@@ -495,7 +525,7 @@ void loop()
 	}
 	else
 	{
-#if defined(LED_SENDFLASHS)
+#if defined(USELEDFLASHS)
 		flashLED(50, 3);
 #endif
 

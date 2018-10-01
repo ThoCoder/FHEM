@@ -1,9 +1,11 @@
-//#define USESERIAL
+#define USESERIAL
 //#define USESERIAL2
 //#define LEDFLASHS
 
-#define DHT22present 1
+//#define DHT22present 1
 //#define BMP180present 1
+#define BME280present 1
+#define BME280raw 1
 #define RF69_COMPAT 1
 #include <JeeLib.h>
 
@@ -20,15 +22,17 @@
 #elif defined(BMP180present)
 #define BMP180_SCL 9
 #define BMP180_SDA 10
+#elif defined(BME280present)
+#define BME280_I2Caddress 0x76
 #endif
 
-#define myNodeID 23
+#define myNodeID 21
 #define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
 #define RETRYDELAY 500
 #define RETRIES 5
-#define WAITLOOPS 5
+#define WAITLOOPS 1
 #define WAITINTERVAL 59000
 
 #define CMD_temperature 11
@@ -50,6 +54,11 @@ PortI2C i2c(1); // BMP085 SDA to D10 and SCL to D9
 BMP085 bmp180(i2c, 3); // ultra high resolution
 #endif
 
+#if defined(BME280present)
+#include <MyAttinyBME280.h>
+MyAttinyBME280 bme280(BME280_I2Caddress, 10, 9);
+#endif
+
 struct DataPacket
 {
 	byte powerCmd;
@@ -68,6 +77,14 @@ struct DataPacket
 	byte pressureCmd;
 	int16_t pressure;	// hPa * 10
 #endif
+#if defined(BME280present)
+	byte tempCmd;
+	int16_t temp;		// °C * 10
+	byte humidityCmd;
+	byte humidity;		// % * 1
+	byte pressureCmd;
+	int16_t pressure;	// hPa * 10
+#endif
 
 	DataPacket()
 	{
@@ -79,6 +96,11 @@ struct DataPacket
 #endif
 #if defined(BMP180present)
 		temp2Cmd = CMD_temperature2;
+		pressureCmd = CMD_pressure;
+#endif
+#if defined(BME280present)
+		tempCmd = CMD_temperature;
+		humidityCmd = CMD_humidity;
 		pressureCmd = CMD_pressure;
 #endif
 	}
@@ -194,7 +216,7 @@ bool waitForAck(byte destNodeId)
 bool sendTo(byte destNodeId, bool requestAck, void* data, byte datalen)
 {
 	bool acked = true;
-	
+
 	rf12_sleep(RF12_WAKEUP);
 
 	while (!rf12_canSend())
@@ -229,7 +251,7 @@ bool sendTo(byte destNodeId, bool requestAck, void* data, byte datalen)
 	return acked;
 }
 
-void setup() 
+void setup()
 {
 	pinMode(LED, OUTPUT);
 	digitalWrite(LED, HIGH);
@@ -249,6 +271,23 @@ void setup()
 	bmp180.getCalibData();
 #endif
 
+#if defined(BME280present)
+	if (bme280.isReady())
+	{
+#if defined(USESERIAL)
+		Serial.println("BME280 OK");
+#endif
+		bme280.setWeatherMonitoring();
+		bme280.init();
+	}
+	else
+	{
+#if defined(USESERIAL)
+		Serial.println("BME280 ERR");
+#endif
+	}
+#endif
+
 	rf12_initialize(myNodeID, freq, network);
 	rf12_sleep(RF12_SLEEP);
 
@@ -256,7 +295,7 @@ void setup()
 	digitalWrite(LED, LOW);
 }
 
-void loop() 
+void loop()
 {
 	// MEASURE
 #if defined(DHT22present)
@@ -278,6 +317,47 @@ void loop()
 
 	Sleepy::loseSomeTime(bmp180.startMeas(BMP085::PRES));
 	bmp180.getResult(BMP085::PRES);
+#endif
+
+#if defined(BME280present)
+#if defined(USESERIAL)
+	Serial.println("BME280");
+#endif
+	bme280.startSingleMeas();
+	bme280.readAll(data.temp, data.pressure, data.humidity);
+
+#if defined(BME280raw)
+	Serial.println();
+	Serial.print("adc_T = "); Serial.println(bme280.adc_T);
+	Serial.print("adc_H = "); Serial.println(bme280.adc_H);
+	Serial.print("adc_P = "); Serial.println(bme280.adc_P);
+	Serial.println();
+	Serial.print("T = "); Serial.println(data.temp);
+	Serial.print("H = "); Serial.println(data.humidity);
+	Serial.print("P = "); Serial.println(data.pressure);
+	Serial.println();
+	Serial.print("dig_T1 = "); Serial.println(bme280.dig_T1);
+	Serial.print("dig_T2 = "); Serial.println(bme280.dig_T2);
+	Serial.print("dig_T3 = "); Serial.println(bme280.dig_T3);
+	Serial.println();
+	Serial.print("dig_H1 = "); Serial.println(bme280.dig_H1);
+	Serial.print("dig_H2 = "); Serial.println(bme280.dig_H2);
+	Serial.print("dig_H3 = "); Serial.println(bme280.dig_H3);
+	Serial.print("dig_H4 = "); Serial.println(bme280.dig_H4);
+	Serial.print("dig_H5 = "); Serial.println(bme280.dig_H5);
+	Serial.print("dig_H6 = "); Serial.println(bme280.dig_H6);
+	Serial.println();
+	Serial.print("dig_P1 = "); Serial.println(bme280.dig_P1);
+	Serial.print("dig_P2 = "); Serial.println(bme280.dig_P2);
+	Serial.print("dig_P3 = "); Serial.println(bme280.dig_P3);
+	Serial.print("dig_P4 = "); Serial.println(bme280.dig_P4);
+	Serial.print("dig_P5 = "); Serial.println(bme280.dig_P5);
+	Serial.print("dig_P6 = "); Serial.println(bme280.dig_P6);
+	Serial.print("dig_P7 = "); Serial.println(bme280.dig_P7);
+	Serial.print("dig_P8 = "); Serial.println(bme280.dig_P8);
+	Serial.print("dig_P9 = "); Serial.println(bme280.dig_P9);
+	Serial.println();
+#endif
 #endif
 
 	// CALCULATE
@@ -319,6 +399,14 @@ void loop()
 	Serial.print(" P=");
 	Serial.print(data.pressure, DEC);
 #endif
+#if defined(BME280present)
+	Serial.print(" T=");
+	Serial.print(data.temp, DEC);
+	Serial.print(" H=");
+	Serial.print(data.humidity, DEC);
+	Serial.print(" P=");
+	Serial.print(data.pressure, DEC);
+#endif
 	Serial.print(" V=");
 	Serial.print(data.power, DEC);
 	Serial.print(" RSSI(-");
@@ -347,7 +435,7 @@ void loop()
 
 		if (retry > RETRIES)
 			break;
-		
+
 #if defined(USESERIAL)
 		Serial.print(" SEND FAILED. RETRY IN ");
 		Serial.print(retryDelay, DEC);
