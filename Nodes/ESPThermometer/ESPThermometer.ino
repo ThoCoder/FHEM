@@ -6,9 +6,10 @@
 #include <ArduinoJson.hpp>
 #include <ArduinoJson.h>
 
+#include <Adafruit_BME280.h>
+
 #define USESERIAL
 #define USEDEEPSLEEP
-#define REDUCEADCNOISE
 
 #define LED 2
 #define LEDON 0
@@ -17,7 +18,7 @@
 #define RTCMEM_DRD 0
 #define RTCMEM_CTX 16
 
-#define MAGIC 0x12345679
+#define MAGIC 0x12345678
 #define MAXNAMESIZE 32
 #define MAXTOPICSIZE 128
 #define MAXPAYLOADSIZE 128
@@ -25,6 +26,10 @@
 #define WIFIMANAGERTIMEOUT 300
 #define WAITCONFIGURATION 1000
 #define SLEEPTIMEMIN 5e6
+
+#define BME280_I2Caddress 0x76
+#define BME280_SDA 4
+#define BME280_SCL 5
 
 ADC_MODE(ADC_TOUT);
 
@@ -35,6 +40,8 @@ PubSubClient mqttClient("0.0.0.0", 1883, 0, wifiClient);
 struct _configuration
 {
     uint32_t    magic = MAGIC;
+
+    uint32_t    mqttCfgEnabled = 0;
 
     char        ssid[MAXNAMESIZE] = "";
     char        password[MAXNAMESIZE] = "";
@@ -47,6 +54,8 @@ struct _configuration
     char        name[MAXNAMESIZE] = "ESP-00-00-00-00-00-00";
     char        mqttTopicBase[MAXTOPICSIZE] = "tho/nodeESP";
     uint32_t    sleepTime = 300000000;
+    float       vccMultiplier = 11.0;
+    uint32_t    reduceNoise = 0;
 };
 _configuration configuration;
 bool configurationChanged = false;
@@ -56,7 +65,11 @@ struct _context
     uint32_t magic = MAGIC;
 
     uint32_t sleepcount = 0;
+
     float vcc = 0;
+    float temperature = 0;
+    float humidity = 0;
+    float pressure = 0;
 };
 _context context;
 
@@ -99,17 +112,20 @@ void SaveConfiguration()
 void PrintConfiguration(struct _configuration& cfg)
 {
 #if defined(USESERIAL)
-    Serial.printf("ssid          : %s\n", cfg.ssid);
-    Serial.printf("password      : %s\n", cfg.password);
-    Serial.printf("ipLocal       : %s\n", IPAddress(cfg.ipLocal).toString().c_str());
-    Serial.printf("subnet        : %s\n", IPAddress(cfg.subnet).toString().c_str());
-    Serial.printf("gateway       : %s\n", IPAddress(cfg.gateway).toString().c_str());
-    Serial.printf("dnsServer     : %s\n", IPAddress(cfg.dnsServer).toString().c_str());
-    Serial.printf("mqttServer    : %s\n", IPAddress(cfg.mqttServer).toString().c_str());
+    Serial.printf("mqttCfgEnabled : %lu\n", cfg.mqttCfgEnabled);
+    Serial.printf("ssid           : %s\n", cfg.ssid);
+    Serial.printf("password       : %s\n", cfg.password);
+    Serial.printf("ipLocal        : %s\n", IPAddress(cfg.ipLocal).toString().c_str());
+    Serial.printf("subnet         : %s\n", IPAddress(cfg.subnet).toString().c_str());
+    Serial.printf("gateway        : %s\n", IPAddress(cfg.gateway).toString().c_str());
+    Serial.printf("dnsServer      : %s\n", IPAddress(cfg.dnsServer).toString().c_str());
+    Serial.printf("mqttServer     : %s\n", IPAddress(cfg.mqttServer).toString().c_str());
     Serial.println();
-    Serial.printf("name          : %s\n", cfg.name);
-    Serial.printf("mqttTopicBase : %s\n", cfg.mqttTopicBase);
-    Serial.printf("sleepTime     : %lu\n", cfg.sleepTime);
+    Serial.printf("name           : %s\n", cfg.name);
+    Serial.printf("mqttTopicBase  : %s\n", cfg.mqttTopicBase);
+    Serial.printf("sleepTime      : %lu\n", cfg.sleepTime);
+    Serial.printf("vccMultiplier  : %s\n", String(cfg.vccMultiplier, 3).c_str());
+    Serial.printf("reduceNoise    : %lu\n", cfg.reduceNoise);
 #endif
 }
 
@@ -133,6 +149,16 @@ void UpdateConfiguration(String message)
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: magic[%X]\n", configuration.magic);
+#endif
+    }
+
+    if (root.containsKey("mqttCfgEnabled"))
+    {
+        configuration.mqttCfgEnabled = root["mqttCfgEnabled"];
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: mqttCfgEnabled[%lu]\n", configuration.mqttCfgEnabled);
 #endif
     }
 
@@ -236,6 +262,26 @@ void UpdateConfiguration(String message)
 #endif
     }
 
+    if (root.containsKey("vccMultiplier"))
+    {
+        configuration.vccMultiplier = root["vccMultiplier"];
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: vccMultiplier[%s]\n", String(configuration.vccMultiplier, 3).c_str());
+#endif
+    }
+
+    if (root.containsKey("reduceNoise"))
+    {
+        configuration.reduceNoise = root["reduceNoise"];
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: reduceNoise[%lu]\n", configuration.reduceNoise);
+#endif
+    }
+
     if (updated)
         configurationChanged = true;
 }
@@ -280,9 +326,9 @@ void PrintContext(struct _context& ctx)
 
 void PrintContext() { PrintContext(context); }
 
-float readVcc() // additional 680kOhm on A0 (680+220 / 100) => 1:10 divider
+float readVcc() // A0 voltage divider: 1M - 100k => 11:1 (vccMultiplier)
 {
-    return analogRead(A0) * 1.1 * 10.0 / 1024.0;
+    return analogRead(A0) * 1.1 * configuration.vccMultiplier / 1024.0;
 }
 
 bool InitialWiFiConfiguration()
@@ -294,12 +340,16 @@ bool InitialWiFiConfiguration()
 #endif
 
     WiFiManager wifiManager;
+    WiFiManagerParameter paramName("Name", "node name", configuration.name, MAXNAMESIZE);
+    wifiManager.addParameter(&paramName);
     WiFiManagerParameter paramMQTT("MQTTIP", "MQTT server IP", (configuration.mqttServer != 0) ? IPAddress(configuration.mqttServer).toString().c_str() : "192.168.20.64", 16);
     wifiManager.addParameter(&paramMQTT);
-    WiFiManagerParameter paramName("Name", "Node Name", configuration.name, MAXNAMESIZE);
-    wifiManager.addParameter(&paramName);
-    WiFiManagerParameter paramSleepTime("SleepTime", "Sleep Time (ms)", String(configuration.sleepTime / 1000).c_str(), 10);
+    WiFiManagerParameter paramMQTTcfg("MQTTCFG", "config via MQTT enabled", String((configuration.mqttCfgEnabled != 0) ? 1 : 0).c_str(), 3);
+    wifiManager.addParameter(&paramMQTTcfg);
+    WiFiManagerParameter paramSleepTime("SleepTime", "sleeping time (ms)", String(configuration.sleepTime / 1000).c_str(), 10);
     wifiManager.addParameter(&paramSleepTime);
+    WiFiManagerParameter paramVccMultiplier("VCCM", "Vcc multiplier", String(configuration.vccMultiplier, 3).c_str(), 10);
+    wifiManager.addParameter(&paramVccMultiplier);
 
     wifiManager.setConfigPortalTimeout(WIFIMANAGERTIMEOUT);
 
@@ -309,6 +359,8 @@ bool InitialWiFiConfiguration()
 #if defined(USESERIAL)
         Serial.printf("WIFIMAN: OK. SSID[%s] PWD[%s]\n", WiFi.SSID().c_str(), WiFi.psk().c_str());
 #endif
+        configuration.mqttCfgEnabled = atoi(paramMQTTcfg.getValue());
+
         strncpy(configuration.ssid, WiFi.SSID().c_str(), MAXNAMESIZE);
         strncpy(configuration.password, WiFi.psk().c_str(), MAXNAMESIZE);
         configuration.ipLocal = WiFi.localIP();
@@ -323,6 +375,7 @@ bool InitialWiFiConfiguration()
         strncpy(configuration.name, paramName.getValue(), MAXNAMESIZE);
 
         configuration.sleepTime = atoi(paramSleepTime.getValue()) * 1000;
+        configuration.vccMultiplier = atof(paramVccMultiplier.getValue());
 
         PrintConfiguration();
         SaveConfiguration();
@@ -342,8 +395,10 @@ bool InitWiFi()
 {
     uint32_t t0 = millis();
 
-    //WiFi.forceSleepWake();
-
+    //WiFi.mode(WIFI_STA);
+    //WiFi.setPhyMode(WIFI_PHY_MODE_11N);
+    //WiFi.setSleepMode(WIFI_MODEM_SLEEP);
+    WiFi.forceSleepWake();
     if (configuration.ipLocal != 0)
     {
         WiFi.config(configuration.ipLocal, configuration.gateway, configuration.subnet, configuration.dnsServer);
@@ -488,16 +543,25 @@ void mqttCallback(char* topic, uint8_t* payload, uint length)
 
     if (strTopic.endsWith("/CFG"))
     {
-        mqttSend("CFG", "", true);
         UpdateConfiguration(message);
     }
 }
 
 void CheckForNewConfiguration()
 {
+    if (configuration.mqttCfgEnabled != 0)
+    {
 #if defined(USESERIAL)
-    Serial.printf("CHECKING FOR NEW CONFIGURATION FOR [%d ms]\n", WAITCONFIGURATION);
+        Serial.printf("CHECKING FOR NEW CONFIGURATION FOR [%d ms]\n", WAITCONFIGURATION);
 #endif
+    }
+    else
+    {
+#if defined(USESERIAL)
+        Serial.printf("MQTT CONFIGURATION DISABLED\n");
+#endif
+        return;
+    }
 
     mqttSubscribe("CFG");
 
@@ -525,9 +589,40 @@ void CheckForNewConfiguration()
     if (configurationChanged)
     {
         configurationChanged = false;
+        mqttSend("CFG", "", true);
 
         PrintConfiguration();
         SaveConfiguration();
+    }
+}
+
+void ReadBME280()
+{
+    Adafruit_BME280 bme;
+
+    Wire.begin(BME280_SDA, BME280_SCL);
+    if (bme.begin(BME280_I2Caddress))
+    {
+#if defined(USESERIAL)
+        Serial.printf("BME280 OK.\n");
+#endif
+        bme.takeForcedMeasurement();
+        context.temperature = bme.readTemperature();
+        context.humidity = bme.readHumidity();
+        context.pressure = bme.readPressure() / 100.0;
+
+#if defined(USESERIAL)
+        Serial.printf("T=%s H=%s P=%s\n",
+            String(context.temperature, 1).c_str(),
+            String(context.humidity, 0).c_str(),
+            String(context.pressure, 0).c_str());
+#endif
+    }
+    else
+    {
+#if defined(USESERIAL)
+        Serial.printf("BME280 NOT FOUND.\n");
+#endif
     }
 }
 
@@ -558,6 +653,10 @@ void loop()
     LoadContext();
     context.sleepcount++;
 
+#if defined(USESERIAL)
+    Serial.println();
+#endif
+
     if (!LoadConfiguration())
         SaveConfiguration();
     PrintConfiguration();
@@ -571,25 +670,54 @@ void loop()
         ESP.reset();
     }
 
+#if defined(USESERIAL)
+    Serial.println();
+#endif
+    ReadBME280();
+
+#if defined(USESERIAL)
+    Serial.println();
+#endif
     if (InitWiFi())
     {
         if (InitMQTT())
         {
+#if defined(USESERIAL)
+            Serial.println();
+#endif
             CheckForNewConfiguration();
 
+#if defined(USESERIAL)
+            Serial.println();
+#endif
             char states[1024];
-            snprintf(states, 1024, "{ \"sleepCount\": %d, \"vcc\": %s }", context.sleepcount, String(context.vcc, 3).c_str());
+            snprintf(states, 1024, "{ \"sleepCount\": %d, \"vcc\": %s, \"temperature\": %s, \"humidity\": %s, \"pressure\": %s, \"RSSI\": %d }",
+                context.sleepcount,
+                String(context.vcc, 3).c_str(),
+                String(context.temperature, 1).c_str(),
+                String(context.humidity, 0).c_str(),
+                String(context.pressure, 0).c_str(),
+                WiFi.RSSI()
+            );
             mqttSend("STATES", states, true);
         }
     }
 
     mqttClient.disconnect();
-#if defined(REDUCEADCNOISE)
-    WiFi.disconnect();
-    WiFi.forceSleepBegin();
-    delay(10);
-#endif
 
+    if (configuration.reduceNoise != 0)
+    {
+#if defined(USESERIAL)
+        Serial.print("Forcing WIFI sleep.\n");
+#endif
+        //WiFi.disconnect();
+        WiFi.forceSleepBegin();
+        delay(10);
+    }
+
+#if defined(USESERIAL)
+    Serial.println();
+#endif
     context.vcc = readVcc();
     Serial.printf("Vcc = %s V\n", String(context.vcc, 3).c_str());
 
@@ -612,7 +740,7 @@ void loop()
     Serial.printf("Sleeping [%lu ms] ...\n", sleepTime / 1000);
 #endif
 
-    ESP.deepSleep(sleepTime);
+    ESP.deepSleep(sleepTime, RF_NO_CAL);
 
 #else
 
