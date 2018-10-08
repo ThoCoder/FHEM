@@ -687,13 +687,21 @@ void CheckForNewConfiguration()
 
 float readVcc() // A0 voltage divider: 1M - 100k => 11:1 (vccMultiplier)
 {
-    float vcc = analogRead(A0) * 1.1 * configuration.vccMultiplier / 1024.0;
+    float vcc = analogRead(A0) * configuration.vccMultiplier / 1024.0;
     float dVcc = vcc - context.vcc;
     bool changed = (fabs(dVcc) >= configuration.vccThreshold);
 
 #if defined(USESERIAL)
     Serial.printf("\nVcc=%s(%s) V changed[%d]\n", String(context.vcc, 3).c_str(), String(dVcc, 3).c_str(), changed);
 #endif
+
+    if (vcc < 2.9)
+    {
+#if defined(USESERIAL)
+        Serial.printf("DEEP DISCHARGE PROTECTION. Sleeping forever.");
+#endif
+        ESP.deepSleep(0, RF_DISABLED);
+    }
 
     if (changed)
     {
@@ -724,16 +732,19 @@ bool ReadBME280()
         float dH = humidity - context.humidity;
         float dp = pressure - context.pressure;
 
-        changed = ((fabs(dT) >= 0.2) || (fabs(dH) >= 1.0) || (fabs(dp) >= 1.0));
+        changed = (
+            (fabs(dT) >= configuration.temperatureThreshold) || 
+            (fabs(dH) >= configuration.humidityThreshold) || 
+            (fabs(dp) >= configuration.pressureThreshold));
 
 #if defined(USESERIAL)
         Serial.printf("T=%s(%s) H=%s(%s) P=%s(%s) changed[%d]\n",
             String(temperature, 1).c_str(),
-            String(dT, 1).c_str(),
+            String(dT, 2).c_str(),
             String(humidity, 0).c_str(),
-            String(dH, 0).c_str(),
+            String(dH, 1).c_str(),
             String(pressure, 0).c_str(),
-            String(dp, 0).c_str(),
+            String(dp, 1).c_str(),
             changed);
 #endif
         if (changed)
