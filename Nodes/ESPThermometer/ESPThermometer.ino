@@ -1,4 +1,3 @@
-#include <DoubleResetDetector.h>
 #include <ESP8266WiFi.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
@@ -9,11 +8,12 @@
 #include <Adafruit_BME280.h>
 
 #define USESERIAL
-#define USEDEEPSLEEP
+#define USELEDFLASHS
 
 #define LED 2
 #define LEDON 0
 #define LEDOFF 1
+#define FLASHINTERVAL 1
 
 #define RTCMEM_DRD 0
 #define RTCMEM_CTX 16
@@ -25,7 +25,11 @@
 #define WIFICONNECTTIMEOUT 10000
 #define WIFIMANAGERTIMEOUT 300
 #define WAITCONFIGURATION 1000
+
 #define SLEEPTIMEMIN 5e6
+#define WAKEMODE_INIT -1
+#define WAKEMODE_RFOFF 0
+#define WAKEMODE_RFON 1
 
 #define BME280_I2Caddress 0x76
 #define BME280_SDA 4
@@ -33,7 +37,7 @@
 
 ADC_MODE(ADC_TOUT);
 
-DoubleResetDetector drd(1, RTCMEM_DRD);
+uint32_t startTimestamp;
 WiFiClient wifiClient;
 PubSubClient mqttClient("0.0.0.0", 1883, 0, wifiClient);
 
@@ -54,8 +58,13 @@ struct _configuration
     char        name[MAXNAMESIZE] = "ESP-00-00-00-00-00-00";
     char        mqttTopicBase[MAXTOPICSIZE] = "tho/nodeESP";
     uint32_t    sleepTime = 300000000;
+    uint32_t    maxIntervalTime = 3600000000;
+
     float       vccMultiplier = 11.0;
-    uint32_t    reduceNoise = 0;
+    float       vccThreshold = 0.19;
+    float       temperatureThreshold = 0.19;
+    float       humidityThreshold = 0.9;
+    float       pressureThreshold = 0.9;
 };
 _configuration configuration;
 bool configurationChanged = false;
@@ -64,7 +73,10 @@ struct _context
 {
     uint32_t magic = MAGIC;
 
-    uint32_t sleepcount = 0;
+    uint32_t wakeMode = WAKEMODE_INIT;
+    uint32_t sleepCount = 0;
+    uint32_t intervalTime = 0;
+    uint32_t resetCount = 0;
 
     float vcc = 0;
     float temperature = 0;
@@ -75,6 +87,9 @@ _context context;
 
 bool LoadConfiguration()
 {
+#if defined(USESERIAL)
+    Serial.println();
+#endif
     _configuration cfg;
 
     EEPROM.begin(512);
@@ -105,27 +120,32 @@ void SaveConfiguration()
     EEPROM.end();
 
 #if defined(USESERIAL)
-    Serial.printf("CFG: configuration saved\n");
+    Serial.printf("\nCFG: configuration saved\n");
 #endif
 }
 
 void PrintConfiguration(struct _configuration& cfg)
 {
 #if defined(USESERIAL)
-    Serial.printf("mqttCfgEnabled : %lu\n", cfg.mqttCfgEnabled);
-    Serial.printf("ssid           : %s\n", cfg.ssid);
-    Serial.printf("password       : %s\n", cfg.password);
-    Serial.printf("ipLocal        : %s\n", IPAddress(cfg.ipLocal).toString().c_str());
-    Serial.printf("subnet         : %s\n", IPAddress(cfg.subnet).toString().c_str());
-    Serial.printf("gateway        : %s\n", IPAddress(cfg.gateway).toString().c_str());
-    Serial.printf("dnsServer      : %s\n", IPAddress(cfg.dnsServer).toString().c_str());
-    Serial.printf("mqttServer     : %s\n", IPAddress(cfg.mqttServer).toString().c_str());
+    Serial.printf("mqttCfgEnabled  : %lu\n", cfg.mqttCfgEnabled);
+    Serial.printf("ssid            : %s\n", cfg.ssid);
+    Serial.printf("password        : %s\n", cfg.password);
+    Serial.printf("ipLocal         : %s\n", IPAddress(cfg.ipLocal).toString().c_str());
+    Serial.printf("subnet          : %s\n", IPAddress(cfg.subnet).toString().c_str());
+    Serial.printf("gateway         : %s\n", IPAddress(cfg.gateway).toString().c_str());
+    Serial.printf("dnsServer       : %s\n", IPAddress(cfg.dnsServer).toString().c_str());
+    Serial.printf("mqttServer      : %s\n", IPAddress(cfg.mqttServer).toString().c_str());
     Serial.println();
-    Serial.printf("name           : %s\n", cfg.name);
-    Serial.printf("mqttTopicBase  : %s\n", cfg.mqttTopicBase);
-    Serial.printf("sleepTime      : %lu\n", cfg.sleepTime);
-    Serial.printf("vccMultiplier  : %s\n", String(cfg.vccMultiplier, 3).c_str());
-    Serial.printf("reduceNoise    : %lu\n", cfg.reduceNoise);
+    Serial.printf("name            : %s\n", cfg.name);
+    Serial.printf("mqttTopicBase   : %s\n", cfg.mqttTopicBase);
+    Serial.printf("sleepTime       : %lu\n", cfg.sleepTime);
+    Serial.printf("maxIntervalTime : %lu\n", cfg.maxIntervalTime);
+    Serial.println();
+    Serial.printf("vccMultiplier        : %s\n", String(cfg.vccMultiplier, 3).c_str());
+    Serial.printf("vccThreshold         : %s\n", String(cfg.vccThreshold, 2).c_str());
+    Serial.printf("temperatureThreshold : %s\n", String(cfg.temperatureThreshold, 2).c_str());
+    Serial.printf("humidityThreshold    : %s\n", String(cfg.humidityThreshold, 2).c_str());
+    Serial.printf("pressureThreshold    : %s\n", String(cfg.pressureThreshold, 2).c_str());
 #endif
 }
 
@@ -134,11 +154,11 @@ void PrintConfiguration() { PrintConfiguration(configuration); }
 void UpdateConfiguration(String message)
 {
 #if defined(USESERIAL)
-    Serial.printf("UPDCFG: message[%s]\n", message.c_str());
+    Serial.printf("\nUPDCFG: message[%s]\n", message.c_str());
 #endif
 
     bool updated = false;
-    StaticJsonBuffer<JSON_OBJECT_SIZE(8) + 40> jsonBuffer;
+    StaticJsonBuffer<JSON_OBJECT_SIZE(32) + 40> jsonBuffer;
 
     JsonObject& root = jsonBuffer.parse(message);
 
@@ -255,10 +275,22 @@ void UpdateConfiguration(String message)
     if (root.containsKey("sleepTime"))
     {
         configuration.sleepTime = root["sleepTime"];
+        if (configuration.sleepTime < SLEEPTIMEMIN)
+            configuration.sleepTime = SLEEPTIMEMIN;
         updated = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: sleepTime[%lu]\n", configuration.sleepTime);
+#endif
+    }
+
+    if (root.containsKey("maxIntervalTime"))
+    {
+        configuration.maxIntervalTime = root["maxIntervalTime"];
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: maxIntervalTime[%lu]\n", configuration.maxIntervalTime);
 #endif
     }
 
@@ -272,13 +304,43 @@ void UpdateConfiguration(String message)
 #endif
     }
 
-    if (root.containsKey("reduceNoise"))
+    if (root.containsKey("vccThreshold"))
     {
-        configuration.reduceNoise = root["reduceNoise"];
+        configuration.vccThreshold = root["vccThreshold"];
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: reduceNoise[%lu]\n", configuration.reduceNoise);
+        Serial.printf("UPDCFG: vccThreshold[%s]\n", String(configuration.vccThreshold, 2).c_str());
+#endif
+    }
+
+    if (root.containsKey("temperatureThreshold"))
+    {
+        configuration.temperatureThreshold = root["temperatureThreshold"];
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: temperatureThreshold[%s]\n", String(configuration.temperatureThreshold, 2).c_str());
+#endif
+    }
+
+    if (root.containsKey("humidityThreshold"))
+    {
+        configuration.humidityThreshold = root["humidityThreshold"];
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: humidityThreshold[%s]\n", String(configuration.humidityThreshold, 2).c_str());
+#endif
+    }
+
+    if (root.containsKey("pressureThreshold"))
+    {
+        configuration.pressureThreshold = root["pressureThreshold"];
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: pressureThreshold[%s]\n", String(configuration.pressureThreshold, 2).c_str());
 #endif
     }
 
@@ -288,6 +350,9 @@ void UpdateConfiguration(String message)
 
 bool LoadContext()
 {
+#if defined(USESERIAL)
+    Serial.println();
+#endif
     _context ctx;
     ESP.rtcUserMemoryRead(RTCMEM_CTX, (uint32_t*)&ctx, sizeof(ctx));
 
@@ -302,7 +367,7 @@ bool LoadContext()
     context = ctx;
 
 #if defined(USESERIAL)
-    Serial.printf("CTX: context loaded (sleepcount = %d)\n", context.sleepcount);
+    Serial.printf("CTX: context loaded.\n");
 #endif
     return true;
 }
@@ -312,23 +377,44 @@ void SaveContext()
     ESP.rtcUserMemoryWrite(RTCMEM_CTX, (uint32_t*)&context, sizeof(context));
 
 #if defined(USESERIAL)
-    Serial.printf("CTX: context saved (sleepcount = %d)\n", context.sleepcount);
+    Serial.printf("\nCTX: context saved.\n");
 #endif
 }
 
 void PrintContext(struct _context& ctx)
 {
 #if defined(USESERIAL)
-    Serial.printf("sleepcount : %d\n", ctx.sleepcount);
-    Serial.printf("vcc        : %s V\n", String(ctx.vcc, 3).c_str());
+    Serial.printf("wakeMode     : %s\n", wakeModeText(ctx.wakeMode).c_str());
+    Serial.printf("sleepCount   : %lu\n", ctx.sleepCount);
+    Serial.printf("intervalTime : %lu\n", ctx.intervalTime);
+    Serial.printf("resetCount   : %lu\n", ctx.resetCount);
+    Serial.printf("vcc          : %s V\n", String(ctx.vcc, 3).c_str());
+    Serial.printf("temperature  : %s C\n", String(ctx.temperature, 1).c_str());
+    Serial.printf("humidity     : %s %%\n", String(ctx.humidity, 0).c_str());
+    Serial.printf("pressure     : %s hPa\n", String(ctx.pressure, 0).c_str());
 #endif
 }
 
 void PrintContext() { PrintContext(context); }
 
-float readVcc() // A0 voltage divider: 1M - 100k => 11:1 (vccMultiplier)
+String wakeModeText(uint32_t wakeMode)
 {
-    return analogRead(A0) * 1.1 * configuration.vccMultiplier / 1024.0;
+    switch (wakeMode)
+    {
+    case WAKEMODE_INIT:  return String("INIT");
+    case WAKEMODE_RFOFF: return String("RFOFF");
+    case WAKEMODE_RFON:  return String("RFON");
+    default:             return String(wakeMode);
+    }
+}
+
+void flashLED()
+{
+#if defined(USELEDFLASHS)
+    digitalWrite(LED, LEDON);
+    delay(FLASHINTERVAL);
+    digitalWrite(LED, LEDOFF);
+#endif
 }
 
 bool InitialWiFiConfiguration()
@@ -336,7 +422,7 @@ bool InitialWiFiConfiguration()
     digitalWrite(LED, LEDON);
 
 #if defined(USESERIAL)
-    Serial.printf("WIFIMAN: Starting WifiManager for %d seconds ...\n", WIFIMANAGERTIMEOUT);
+    Serial.printf("\nWIFIMAN: Starting WifiManager for %d seconds ...\n", WIFIMANAGERTIMEOUT);
 #endif
 
     WiFiManager wifiManager;
@@ -348,6 +434,8 @@ bool InitialWiFiConfiguration()
     wifiManager.addParameter(&paramMQTTcfg);
     WiFiManagerParameter paramSleepTime("SleepTime", "sleeping time (ms)", String(configuration.sleepTime / 1000).c_str(), 10);
     wifiManager.addParameter(&paramSleepTime);
+    WiFiManagerParameter paramMaxIntervalTime("maxIntervalTime", "max interval time (ms)", String(configuration.maxIntervalTime / 1000).c_str(), 10);
+    wifiManager.addParameter(&paramMaxIntervalTime);
     WiFiManagerParameter paramVccMultiplier("VCCM", "Vcc multiplier", String(configuration.vccMultiplier, 3).c_str(), 10);
     wifiManager.addParameter(&paramVccMultiplier);
 
@@ -375,6 +463,7 @@ bool InitialWiFiConfiguration()
         strncpy(configuration.name, paramName.getValue(), MAXNAMESIZE);
 
         configuration.sleepTime = atoi(paramSleepTime.getValue()) * 1000;
+        configuration.maxIntervalTime = atoi(paramMaxIntervalTime.getValue()) * 1000;
         configuration.vccMultiplier = atof(paramVccMultiplier.getValue());
 
         PrintConfiguration();
@@ -596,85 +685,76 @@ void CheckForNewConfiguration()
     }
 }
 
-void ReadBME280()
+float readVcc() // A0 voltage divider: 1M - 100k => 11:1 (vccMultiplier)
 {
+    float vcc = analogRead(A0) * 1.1 * configuration.vccMultiplier / 1024.0;
+    float dVcc = vcc - context.vcc;
+    bool changed = (fabs(dVcc) >= configuration.vccThreshold);
+
+#if defined(USESERIAL)
+    Serial.printf("\nVcc=%s(%s) V changed[%d]\n", String(context.vcc, 3).c_str(), String(dVcc, 3).c_str(), changed);
+#endif
+
+    if (changed)
+    {
+        context.vcc = vcc;
+    }
+
+    return changed;
+}
+
+bool ReadBME280()
+{
+    bool changed = false;
+
     Adafruit_BME280 bme;
 
     Wire.begin(BME280_SDA, BME280_SCL);
     if (bme.begin(BME280_I2Caddress))
     {
 #if defined(USESERIAL)
-        Serial.printf("BME280 OK.\n");
+        Serial.printf("\nBME280 OK.\n");
 #endif
         bme.takeForcedMeasurement();
-        context.temperature = bme.readTemperature();
-        context.humidity = bme.readHumidity();
-        context.pressure = bme.readPressure() / 100.0;
+        float temperature = bme.readTemperature();
+        float humidity = bme.readHumidity();
+        float pressure = bme.readPressure() / 100.0;
+
+        float dT = temperature - context.temperature;
+        float dH = humidity - context.humidity;
+        float dp = pressure - context.pressure;
+
+        changed = ((fabs(dT) >= 0.2) || (fabs(dH) >= 1.0) || (fabs(dp) >= 1.0));
 
 #if defined(USESERIAL)
-        Serial.printf("T=%s H=%s P=%s\n",
-            String(context.temperature, 1).c_str(),
-            String(context.humidity, 0).c_str(),
-            String(context.pressure, 0).c_str());
+        Serial.printf("T=%s(%s) H=%s(%s) P=%s(%s) changed[%d]\n",
+            String(temperature, 1).c_str(),
+            String(dT, 1).c_str(),
+            String(humidity, 0).c_str(),
+            String(dH, 0).c_str(),
+            String(pressure, 0).c_str(),
+            String(dp, 0).c_str(),
+            changed);
 #endif
+        if (changed)
+        {
+            context.temperature = temperature;
+            context.humidity = humidity;
+            context.pressure = pressure;
+        }
     }
     else
     {
 #if defined(USESERIAL)
-        Serial.printf("BME280 NOT FOUND.\n");
+        Serial.printf("\nBME280 NOT FOUND.\n");
 #endif
     }
+
+    return changed;
 }
 
-uint32_t startTimestamp;
-
-void setup()
+void Send()
 {
-    startTimestamp = millis();
-
-#if defined(USESERIAL)
-    Serial.begin(115200);
-    Serial.println("\nSETUP");
-#endif
-
-    pinMode(LED, OUTPUT);
-}
-
-void loop()
-{
-    bool doubleResetDetected = drd.detectDoubleReset();
-
-    digitalWrite(LED, LEDON);
-    delay(20);
-    digitalWrite(LED, LEDOFF);
-
-    Serial.println();
-
-    LoadContext();
-    context.sleepcount++;
-
-#if defined(USESERIAL)
-    Serial.println();
-#endif
-
-    if (!LoadConfiguration())
-        SaveConfiguration();
-    PrintConfiguration();
-
-    if ((configuration.ssid[0] == 0) || doubleResetDetected)
-    {
-        drd.stop();
-        InitialWiFiConfiguration();
-
-        delay(2000);
-        ESP.reset();
-    }
-
-#if defined(USESERIAL)
-    Serial.println();
-#endif
-    ReadBME280();
-
 #if defined(USESERIAL)
     Serial.println();
 #endif
@@ -692,7 +772,7 @@ void loop()
 #endif
             char states[1024];
             snprintf(states, 1024, "{ \"sleepCount\": %d, \"vcc\": %s, \"temperature\": %s, \"humidity\": %s, \"pressure\": %s, \"RSSI\": %d }",
-                context.sleepcount,
+                context.sleepCount,
                 String(context.vcc, 3).c_str(),
                 String(context.temperature, 1).c_str(),
                 String(context.humidity, 0).c_str(),
@@ -700,56 +780,140 @@ void loop()
                 WiFi.RSSI()
             );
             mqttSend("STATES", states, true);
+
+            mqttClient.disconnect();
         }
     }
+}
 
-    mqttClient.disconnect();
-
-    if (configuration.reduceNoise != 0)
-    {
-#if defined(USESERIAL)
-        Serial.print("Forcing WIFI sleep.\n");
-#endif
-        //WiFi.disconnect();
-        WiFi.forceSleepBegin();
-        delay(10);
-    }
-
-#if defined(USESERIAL)
-    Serial.println();
-#endif
-    context.vcc = readVcc();
-    Serial.printf("Vcc = %s V\n", String(context.vcc, 3).c_str());
-
+void DeepSleep(uint32_t wakeMode, uint32_t sleepTime)
+{
+    context.wakeMode = wakeMode;
+    context.sleepCount++;
+    context.intervalTime += sleepTime;
     SaveContext();
+    PrintContext();
 
-    drd.stop();
-    uint32_t sleepTime = (configuration.sleepTime > SLEEPTIMEMIN) ? configuration.sleepTime : SLEEPTIMEMIN;
+    flashLED();
 
     uint32_t dt = millis() - startTimestamp;
 #if defined(USESERIAL)
-    Serial.printf("dt = %d ms\n", dt);
+    Serial.printf("\ndt[%d ms] sleeping[%lu ms] wakeMode[%s] ...\n", dt, sleepTime / 1000, wakeModeText(wakeMode).c_str());
 #endif
 
-    digitalWrite(LED, LEDON);
-    delay(20);
-    digitalWrite(LED, LEDOFF);
+    ESP.deepSleep((sleepTime == 0) ? 1 : sleepTime, (wakeMode == WAKEMODE_RFON) ? RF_DEFAULT : RF_DISABLED);
+}
 
-#if defined(USEDEEPSLEEP)
-#if defined(USESERIAL)
-    Serial.printf("Sleeping [%lu ms] ...\n", sleepTime / 1000);
-#endif
-
-    ESP.deepSleep(sleepTime, RF_NO_CAL);
-
-#else
-
-#if defined(USESERIAL)
-    Serial.printf("Waiting [%lu ms] ...\n", sleepTime / 1000);
-#endif
-
-    delay(sleepTime / 1000);
-
+void setup()
+{
     startTimestamp = millis();
+
+#if defined(USESERIAL)
+    Serial.begin(115200);
+    Serial.printf("\nSETUP\n");
 #endif
+
+    pinMode(LED, OUTPUT);
+}
+
+void loop()
+{
+    rst_info* ri = ESP.getResetInfoPtr();
+    bool resetDetected = (ri->reason == REASON_EXT_SYS_RST);
+
+#if defined(USESERIAL)
+    Serial.printf("\nresetReason[%lu] resetDetected[%d]\n", ri->reason, resetDetected);
+#endif
+
+    if (!LoadContext())
+        SaveContext();
+    PrintContext();
+
+    if (!LoadConfiguration())
+        SaveConfiguration();
+    PrintConfiguration();
+
+    flashLED();
+
+    if (resetDetected)
+    {
+        context.resetCount++;
+#if defined(USESERIAL)
+        Serial.printf("\nRESET DETECTED. resetCount[%lu]\n", context.resetCount);
+#endif
+        SaveContext();
+
+        if ((context.resetCount > 1) && (context.wakeMode != WAKEMODE_RFON))
+            DeepSleep(WAKEMODE_RFON, 1);
+
+#if defined(USESERIAL)
+        Serial.printf("WAIT FOR SECOND RESET ...");
+#endif
+        for (int i = 0; i < 10; i++)
+        {
+            digitalWrite(LED, LEDON);
+            delay(250);
+            digitalWrite(LED, LEDOFF);
+            delay(250);
+        }
+#if defined(USESERIAL)
+        Serial.printf("TIMEOUT. Resetting resetCount.\n");
+#endif
+
+        context.resetCount = 0;
+        SaveContext();
+    }
+
+    if (context.wakeMode == WAKEMODE_INIT)
+    {
+#if defined(USESERIAL)
+        Serial.printf("\n(WAKEMODE_INIT) INITIALIZATION: starting RF DISABLED ...");
+#endif
+        DeepSleep(WAKEMODE_RFOFF, 1);
+    }
+
+    if (context.wakeMode == WAKEMODE_RFOFF)
+    {
+#if defined(USESERIAL)
+        Serial.printf("\n(WAKEMODE_RFOFF) measuring ...\n");
+#endif
+        bool changed = readVcc();
+
+        changed |= ReadBME280();
+
+        if (changed || (context.intervalTime >= configuration.maxIntervalTime))
+        {
+#if defined(USESERIAL)
+            Serial.printf("\nSOMETHING CHANGED OR INTERVAL TIMEOUT: starting RF ENABLED ...\n");
+#endif
+            DeepSleep(WAKEMODE_RFON, 1);
+        }
+
+        context.resetCount = 0;
+        DeepSleep(WAKEMODE_RFOFF, configuration.sleepTime);
+    }
+
+    if ((configuration.ssid[0] == 0) || (context.resetCount > 1))
+    {
+#if defined(USESERIAL)
+        Serial.printf("\nMISSING WIFI CONFIG OR DOUBLE RESET: starting initial configuration ...\n");
+#endif
+
+        context.resetCount = 0;
+        SaveContext();
+
+        InitialWiFiConfiguration();
+
+        DeepSleep(WAKEMODE_RFOFF, 1);
+    }
+
+#if defined(USESERIAL)
+    Serial.printf("\n(WAKEMODE_RFON) sending ...\n");
+#endif
+
+    Send();
+
+    context.intervalTime = 0;
+    context.resetCount = 0;
+    DeepSleep(WAKEMODE_RFOFF, configuration.sleepTime);
 }
