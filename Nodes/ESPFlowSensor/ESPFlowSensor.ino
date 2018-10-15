@@ -15,7 +15,7 @@
 #define LEDOFF 1
 #define FLASHINTERVAL 20
 
-#define SENSOR 14
+#define SENSOR 13
 
 #define RTCMEM_DRD 0
 #define RTCMEM_CTX 16
@@ -70,7 +70,7 @@ struct _context
 
     uint32_t    rawCounter = 0;
     float       totalVolumeL = 0;
-    float       dVolumeL = 0;
+    float       deltaVolumeL = 0;
     float       dt = 0;
     float       flowLPM = 0;
 
@@ -391,7 +391,7 @@ void PrintContext(struct _context& ctx)
     Serial.printf("publishCount     : %lu\n", context.publishCount);
     Serial.printf("rawCounter       : %lu\n", context.rawCounter);
     Serial.printf("totalVolumeL     : %s\n", String(context.totalVolumeL, 3).c_str());
-    Serial.printf("dVolumeL         : %s\n", String(context.dVolumeL, 3).c_str());
+    Serial.printf("deltaVolumeL     : %s\n", String(context.deltaVolumeL, 3).c_str());
     Serial.printf("todayVolumeL     : %s\n", String(context.todayVolumeL, 3).c_str());
     Serial.printf("yesterdayVolumeL : %s\n", String(context.yesterdayVolumeL, 3).c_str());
     Serial.printf("dt               : %s\n", String(context.dt, 3).c_str());
@@ -416,7 +416,7 @@ bool UpdateContext(String message)
     {
         context.rawCounter = root["rawCounter"].as<uint32_t>();
         context.totalVolumeL = CountToVolumeL(context.rawCounter);
-        context.dVolumeL = 0;
+        context.deltaVolumeL = 0;
         context.flowLPM = 0;
         context.dt = 0;
 
@@ -807,7 +807,7 @@ void publishStates()
     snprintf(states, 1023, "{ \"rawCounter\": %d, \"totalVolumeL\": %s, \"deltaVolumeL\": %s, \"flowLPM\": %s, \"todayVolumeL\": %s, \"yesterdayVolumeL\": %s, \"publishCount\": %d, \"RSSI\": %d }",
         context.rawCounter,
         String(context.totalVolumeL, 3).c_str(),
-        String(context.dVolumeL, 3).c_str(),
+        String(context.deltaVolumeL, 3).c_str(),
         String(context.flowLPM, 3).c_str(),
         String(context.todayVolumeL, 3).c_str(),
         String(context.yesterdayVolumeL, 3).c_str(),
@@ -869,11 +869,11 @@ void UpdateCounters()
         float prevVolumeL = context.totalVolumeL;
         context.rawCounter += dp;
         context.totalVolumeL = CountToVolumeL(context.rawCounter);
-        context.dVolumeL = context.totalVolumeL - prevVolumeL;
-        context.todayVolumeL += context.dVolumeL;
+        context.deltaVolumeL = context.totalVolumeL - prevVolumeL;
+        context.todayVolumeL += context.deltaVolumeL;
 
         context.dt = (float)dt / 1000.0;
-        context.flowLPM = context.dVolumeL * 60.0 / context.dt;
+        context.flowLPM = context.deltaVolumeL * 60.0 / context.dt;
 
         SaveContext();
     }
