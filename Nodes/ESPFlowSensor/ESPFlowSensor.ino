@@ -5,13 +5,15 @@
 #include <EEPROM.h>
 #include <ArduinoJson.hpp>
 #include <ArduinoJson.h>
+#include <ezTime.h>
 
 #define USESERIAL
-#define USEDEEPSLEEP
+#define USELEDFLASHS
 
 #define LED 2
 #define LEDON 0
 #define LEDOFF 1
+#define FLASHINTERVAL 20
 
 #define SENSOR 14
 
@@ -24,12 +26,14 @@
 #define MAXPAYLOADSIZE 128
 #define WIFICONNECTTIMEOUT 10000
 #define WIFIMANAGERTIMEOUT 300
+#define NTPSYNCINTERVAL 6*3600
 
 ADC_MODE(ADC_TOUT);
 
 DoubleResetDetector drd(5, RTCMEM_DRD);
 WiFiClient wifiClient;
 PubSubClient mqttClient("0.0.0.0", 1883, 0, wifiClient);
+Timezone tz;
 
 struct _configuration
 {
@@ -46,26 +50,45 @@ struct _configuration
     char        name[MAXNAMESIZE] = "ESP-00-00-00-00-00-00";
     char        mqttTopicBase[MAXTOPICSIZE] = "tho/nodeESP";
 
-    uint32_t    measureInterval = 250;
-    uint32_t    minPublishInterval = 300000;
+    uint32_t    measureInterval = 333;
+    uint32_t    minPublishInterval = 900000;
     uint32_t    resetFlowInterval = 60000;
     uint32_t    countsPerLiter = 5880;  // F (in Hz) = 98 * Q (in l/min) => 5880 impulses per litre
+
+    char        timezone[MAXNAMESIZE] = "CET";
 };
 _configuration configuration;
+bool sendSettings = true;
+bool timeInitialized = false;
+bool softReset = false;
 
 struct _context
 {
     uint32_t    magic = MAGIC;
 
-    uint32_t    loopCount = 0;
+    uint32_t    publishCount = 0;
 
     uint32_t    rawCounter = 0;
-    float       volumeL = 0;
+    float       totalVolumeL = 0;
     float       dVolumeL = 0;
     float       dt = 0;
     float       flowLPM = 0;
+
+    float       todayVolumeL = 0;
+    float       yesterdayVolumeL = 0;
 };
 _context context;
+bool updateContextFromMQTT = false;
+bool contextChanged = false;
+
+void flashLED()
+{
+#if defined(USELEDFLASHS)
+    digitalWrite(LED, LEDON);
+    delay(FLASHINTERVAL);
+    digitalWrite(LED, LEDOFF);
+#endif
+}
 
 bool LoadConfiguration()
 {
@@ -101,25 +124,27 @@ void SaveConfiguration()
 #if defined(USESERIAL)
     Serial.printf("CFG: configuration saved\n");
 #endif
+
+    sendSettings = true;
 }
 
 void PrintConfiguration(struct _configuration& cfg)
 {
 #if defined(USESERIAL)
-    Serial.printf("ssid       : %s\n", cfg.ssid);
-    Serial.printf("password   : %s\n", cfg.password);
-    Serial.printf("ipLocal    : %s\n", IPAddress(cfg.ipLocal).toString().c_str());
-    Serial.printf("subnet     : %s\n", IPAddress(cfg.subnet).toString().c_str());
-    Serial.printf("gateway    : %s\n", IPAddress(cfg.gateway).toString().c_str());
-    Serial.printf("dnsServer  : %s\n", IPAddress(cfg.dnsServer).toString().c_str());
-    Serial.printf("mqttServer : %s\n", IPAddress(cfg.mqttServer).toString().c_str());
-    Serial.println();
+    Serial.printf("ssid               : %s\n", cfg.ssid);
+    Serial.printf("password           : %s\n", cfg.password);
+    Serial.printf("ipLocal            : %s\n", IPAddress(cfg.ipLocal).toString().c_str());
+    Serial.printf("subnet             : %s\n", IPAddress(cfg.subnet).toString().c_str());
+    Serial.printf("gateway            : %s\n", IPAddress(cfg.gateway).toString().c_str());
+    Serial.printf("dnsServer          : %s\n", IPAddress(cfg.dnsServer).toString().c_str());
+    Serial.printf("mqttServer         : %s\n", IPAddress(cfg.mqttServer).toString().c_str());
     Serial.printf("name               : %s\n", cfg.name);
     Serial.printf("mqttTopicBase      : %s\n", cfg.mqttTopicBase);
     Serial.printf("measureInterval    : %lu\n", cfg.measureInterval);
     Serial.printf("minPublishInterval : %lu\n", cfg.minPublishInterval);
     Serial.printf("resetFlowInterval  : %lu\n", cfg.resetFlowInterval);
     Serial.printf("countsPerLiter     : %lu\n", cfg.countsPerLiter);
+    Serial.printf("timezone           : %s\n", cfg.timezone);
 #endif
 }
 
@@ -148,8 +173,9 @@ bool UpdateConfiguration(String message)
 
     if (root.containsKey("ssid"))
     {
-        strncpy(configuration.ssid, root["ssid"], 16);
+        strncpy(configuration.ssid, root["ssid"], MAXNAMESIZE);
         updated = true;
+        softReset = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: ssid[%s]\n", configuration.ssid);
@@ -160,6 +186,7 @@ bool UpdateConfiguration(String message)
     {
         strncpy(configuration.password, root["password"], MAXNAMESIZE);
         updated = true;
+        softReset = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: password[%s]\n", configuration.password);
@@ -172,6 +199,7 @@ bool UpdateConfiguration(String message)
         ip.fromString(root["ipLocal"].as<char*>());
         configuration.ipLocal = ip;
         updated = true;
+        softReset = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: ipLocal[%s]\n", IPAddress(configuration.ipLocal).toString().c_str());
@@ -184,6 +212,7 @@ bool UpdateConfiguration(String message)
         ip.fromString(root["subnet"].as<char*>());
         configuration.subnet = ip;
         updated = true;
+        softReset = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: subnet[%s]\n", IPAddress(configuration.subnet).toString().c_str());
@@ -196,6 +225,7 @@ bool UpdateConfiguration(String message)
         ip.fromString(root["gateway"].as<char*>());
         configuration.gateway = ip;
         updated = true;
+        softReset = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: gateway[%s]\n", IPAddress(configuration.gateway).toString().c_str());
@@ -208,6 +238,7 @@ bool UpdateConfiguration(String message)
         ip.fromString(root["dnsServer"].as<char*>());
         configuration.dnsServer = ip;
         updated = true;
+        softReset = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: dnsServer[%s]\n", IPAddress(configuration.dnsServer).toString().c_str());
@@ -220,6 +251,7 @@ bool UpdateConfiguration(String message)
         ip.fromString(root["mqttServer"].as<char*>());
         configuration.mqttServer = ip;
         updated = true;
+        softReset = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: mqttServer[%s]\n", IPAddress(configuration.mqttServer).toString().c_str());
@@ -230,6 +262,7 @@ bool UpdateConfiguration(String message)
     {
         strncpy(configuration.name, root["name"], MAXNAMESIZE);
         updated = true;
+        softReset = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: name[%s]\n", configuration.name);
@@ -238,7 +271,7 @@ bool UpdateConfiguration(String message)
 
     if (root.containsKey("measureInterval"))
     {
-        configuration.measureInterval = root["measureInterval"];
+        configuration.measureInterval = root["measureInterval"].as<uint32_t>();
         updated = true;
 
 #if defined(USESERIAL)
@@ -248,7 +281,7 @@ bool UpdateConfiguration(String message)
 
     if (root.containsKey("minPublishInterval"))
     {
-        configuration.minPublishInterval = root["minPublishInterval"];
+        configuration.minPublishInterval = root["minPublishInterval"].as<uint32_t>();
         updated = true;
 
 #if defined(USESERIAL)
@@ -258,7 +291,7 @@ bool UpdateConfiguration(String message)
 
     if (root.containsKey("resetFlowInterval"))
     {
-        configuration.resetFlowInterval = root["resetFlowInterval"];
+        configuration.resetFlowInterval = root["resetFlowInterval"].as<uint32_t>();
         updated = true;
 
 #if defined(USESERIAL)
@@ -268,11 +301,54 @@ bool UpdateConfiguration(String message)
 
     if (root.containsKey("countsPerLiter"))
     {
-        configuration.countsPerLiter = root["countsPerLiter"];
+        configuration.countsPerLiter = root["countsPerLiter"].as<uint32_t>();
         updated = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: countsPerLiter[%lu]\n", configuration.countsPerLiter);
+#endif
+    }
+
+    if (root.containsKey("timezone"))
+    {
+        strncpy(configuration.timezone, root["timezone"], MAXNAMESIZE);
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: timezone[%s]\n", configuration.timezone);
+#endif
+        ConfigureTime();
+    }
+
+    if (root.containsKey("totalVolumeL"))
+    {
+        float totalVolumeL = root["totalVolumeL"].as<float>();
+        context.rawCounter = VolumeLToCount(totalVolumeL);
+        context.totalVolumeL = CountToVolumeL(context.rawCounter);
+        contextChanged = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: totalVolumeL[%s]\n", String(context.totalVolumeL, 3).c_str());
+#endif
+    }
+
+    if (root.containsKey("todayVolumeL"))
+    {
+        context.todayVolumeL = root["todayVolumeL"].as<float>();
+        contextChanged = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: todayVolumeL[%s]\n", String(context.todayVolumeL, 3).c_str());
+#endif
+    }
+
+    if (root.containsKey("yesterdayVolumeL"))
+    {
+        context.yesterdayVolumeL = root["yesterdayVolumeL"].as<float>();
+        contextChanged = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCFG: yesterdayVolumeL[%s]\n", String(context.yesterdayVolumeL, 3).c_str());
 #endif
     }
 
@@ -295,7 +371,7 @@ bool LoadContext()
     context = ctx;
 
 #if defined(USESERIAL)
-    Serial.printf("CTX: context loaded (loopCount = %d)\n", context.loopCount);
+    Serial.printf("CTX: context loaded\n");
 #endif
     return true;
 }
@@ -305,23 +381,143 @@ void SaveContext()
     ESP.rtcUserMemoryWrite(RTCMEM_CTX, (uint32_t*)&context, sizeof(context));
 
 #if defined(USESERIAL)
-    Serial.printf("CTX: context saved (loopCount = %d)\n", context.loopCount);
+    Serial.printf("CTX: context saved\n");
 #endif
 }
 
 void PrintContext(struct _context& ctx)
 {
 #if defined(USESERIAL)
-    Serial.printf("loopCount  : %lu\n", context.loopCount);
-    Serial.printf("rawCounter : %lu\n", context.rawCounter);
-    Serial.printf("volumeL    : %s\n", String(context.volumeL, 3).c_str());
-    Serial.printf("dVolumeL   : %s\n", String(context.dVolumeL, 3).c_str());
-    Serial.printf("dt         : %s\n", String(context.dt, 3).c_str());
-    Serial.printf("flowLPM    : %s\n", String(context.flowLPM, 3).c_str());
+    Serial.printf("publishCount     : %lu\n", context.publishCount);
+    Serial.printf("rawCounter       : %lu\n", context.rawCounter);
+    Serial.printf("totalVolumeL     : %s\n", String(context.totalVolumeL, 3).c_str());
+    Serial.printf("dVolumeL         : %s\n", String(context.dVolumeL, 3).c_str());
+    Serial.printf("todayVolumeL     : %s\n", String(context.todayVolumeL, 3).c_str());
+    Serial.printf("yesterdayVolumeL : %s\n", String(context.yesterdayVolumeL, 3).c_str());
+    Serial.printf("dt               : %s\n", String(context.dt, 3).c_str());
+    Serial.printf("flowLPM          : %s\n", String(context.flowLPM, 3).c_str());
 #endif
 }
 
 void PrintContext() { PrintContext(context); }
+
+bool UpdateContext(String message)
+{
+#if defined(USESERIAL)
+    Serial.printf("UPDCTX: message[%s]\n", message.c_str());
+#endif
+
+    bool updated = false;
+    StaticJsonBuffer<JSON_OBJECT_SIZE(32) + 40> jsonBuffer;
+
+    JsonObject& root = jsonBuffer.parse(message);
+
+    if (root.containsKey("rawCounter"))
+    {
+        context.rawCounter = root["rawCounter"].as<uint32_t>();
+        context.totalVolumeL = CountToVolumeL(context.rawCounter);
+        context.dVolumeL = 0;
+        context.flowLPM = 0;
+        context.dt = 0;
+
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCTX: rawCounter[%lu]\n", context.rawCounter);
+#endif
+    }
+
+    if (root.containsKey("todayVolumeL"))
+    {
+        context.todayVolumeL = root["todayVolumeL"].as<float>();
+
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCTX: todayVolumeL[%s]\n", String(context.todayVolumeL, 3).c_str());
+#endif
+    }
+
+    if (root.containsKey("yesterdayVolumeL"))
+    {
+        context.yesterdayVolumeL = root["yesterdayVolumeL"].as<float>();
+
+        updated = true;
+
+#if defined(USESERIAL)
+        Serial.printf("UPDCTX: yesterdayVolumeL[%s]\n", String(context.yesterdayVolumeL, 3).c_str());
+#endif
+    }
+
+    return updated;
+}
+
+bool ConfigureTime()
+{
+    uint32_t t0 = millis();
+
+    bool succeeded = tz.setLocation(configuration.timezone);
+    tz.setDefault();
+
+    uint32_t dt = millis() - t0;
+
+#if defined(USESERIAL)
+    Serial.printf("TIMECFG: location[%s] result[%d] dt[%d ms]\n", configuration.timezone, succeeded, dt);
+#endif
+
+    timeInitialized = false;
+
+    return succeeded;
+}
+
+uint8_t dayCounterEventHandle = 0;
+void SetDayCounterEvent()
+{
+    if (dayCounterEventHandle != 0)
+    {
+        deleteEvent(dayCounterEventHandle);
+        dayCounterEventHandle = 0;
+    }
+
+    long interval = 86400;
+    time_t _now = now();
+    time_t _eventTime = _now - (_now % interval) + interval;
+    dayCounterEventHandle = setEvent(HandleDayCounter, _eventTime);
+
+#if defined(USESERIAL)
+    Serial.printf("(%s): NEXT DAY COUNTER RESET: %s\n", dateTime(_now).c_str(), dateTime(_eventTime).c_str());
+#endif
+}
+
+void HandleDayCounter()
+{
+    dayCounterEventHandle = 0;
+
+    context.yesterdayVolumeL = context.todayVolumeL;
+    context.todayVolumeL = 0;
+
+    contextChanged = true;
+
+    SetDayCounterEvent();
+}
+
+void HandleTime()
+{
+    events();
+
+    if (!timeInitialized)
+    {
+        if (timeStatus() == timeSet)
+        {
+            timeInitialized = true;
+
+#if defined(USESERIAL)
+            Serial.printf("TIME INITIALIZED: %s\n", dateTime().c_str());
+#endif
+            SetDayCounterEvent();
+        }
+    }
+}
 
 bool InitialWiFiConfiguration()
 {
@@ -410,6 +606,8 @@ bool InitWiFi()
         WiFi.setAutoConnect(true);
         WiFi.setAutoReconnect(true);
         WiFi.setSleepMode(WIFI_MODEM_SLEEP);
+
+        ConfigureTime();
     }
     else
     {
@@ -445,6 +643,9 @@ bool InitMQTT()
         Serial.printf("MQTT connected. dt[%d ms]\n", dt);
 #endif
         mqttSubscribe("CFG");
+
+        if (updateContextFromMQTT)
+            mqttSubscribe("STATES");
     }
     else
     {
@@ -526,6 +727,35 @@ bool mqttSubscribe(const char* subTopic)
     return succeeded;
 }
 
+bool mqttUnsubscribe(const char* subTopic)
+{
+    uint32_t t0 = millis();
+
+    String topic = GetTopic(subTopic);
+
+#if defined(USESERIAL)
+    Serial.printf("MQTT: unsubscribing topic[%s] ... ", topic.c_str());
+#endif
+
+    if (!mqttClient.connected())
+    {
+#if defined(USESERIAL)
+        Serial.print("FAILED. NOT CONNECTED.\n");
+#endif
+        return false;
+    }
+
+    bool succeeded = mqttClient.unsubscribe(topic.c_str());
+
+    uint32_t dt = millis() - t0;
+
+#if defined(USESERIAL)
+    Serial.printf("%s. dt[%d ms]\n", succeeded ? "OK" : "FAILED", dt);
+#endif
+
+    return succeeded;
+}
+
 void mqttCallback(char* topic, uint8_t* payload, uint length)
 {
     String message;
@@ -551,20 +781,55 @@ void mqttCallback(char* topic, uint8_t* payload, uint length)
             }
         }
     }
+    else if (strTopic.endsWith("/STATES"))
+    {
+        if (message.length() > 0)
+        {
+            if (updateContextFromMQTT)
+            {
+                if (UpdateContext(message))
+                {
+                    PrintContext();
+                    SaveContext();
+
+                    updateContextFromMQTT = false;
+
+                    mqttUnsubscribe("STATES");
+                }
+            }
+        }
+    }
 }
 
 void publishStates()
 {
     char states[1024];
-    snprintf(states, 1024, "{ \"rawCounter\": %d, \"totalVolumeL\": %s, \"deltaVolumeL\": %s, \"flowLPM\": %s, \"loopCount\": %d, \"RSSI\": %d }",
+    snprintf(states, 1023, "{ \"rawCounter\": %d, \"totalVolumeL\": %s, \"deltaVolumeL\": %s, \"flowLPM\": %s, \"todayVolumeL\": %s, \"yesterdayVolumeL\": %s, \"publishCount\": %d, \"RSSI\": %d }",
         context.rawCounter,
-        String(context.volumeL, 3).c_str(),
+        String(context.totalVolumeL, 3).c_str(),
         String(context.dVolumeL, 3).c_str(),
         String(context.flowLPM, 3).c_str(),
-        context.loopCount,
+        String(context.todayVolumeL, 3).c_str(),
+        String(context.yesterdayVolumeL, 3).c_str(),
+        context.publishCount,
         WiFi.RSSI()
     );
-    mqttPublish("STATES", states, true);
+
+    if (mqttPublish("STATES", states, true))
+        flashLED();
+}
+
+void publishSettings()
+{
+    char settings[1024];
+    snprintf(settings, 1023, "{ \"ssid\": \"%s\", \"ipLocal\": \"%s\", \"mqttServer\": \"%s\", \"minPublishInterval\": %lu, \"resetFlowInterval\": %lu, \"measureInterval\": %lu, \"countsPerLiter\": %lu, \"timezone\": \"%s\" }",
+        configuration.ssid, IPAddress(configuration.ipLocal).toString().c_str(), IPAddress(configuration.mqttServer).toString().c_str(),
+        configuration.minPublishInterval, configuration.resetFlowInterval,
+        configuration.measureInterval, configuration.countsPerLiter,
+        configuration.timezone
+    );
+
+    bool succeeded = mqttPublish("SETTINGS", settings, true);
 }
 
 volatile int pulseCount = 0;
@@ -581,9 +846,14 @@ float CountToVolumeL(uint32_t count)
     return (float)count / (float)configuration.countsPerLiter;
 }
 
+uint32_t VolumeLToCount(float volumeL)
+{
+    return (uint32_t)(configuration.countsPerLiter * volumeL);
+}
+
 uint32_t prevPulseCountTimestamp = 0;
 uint32_t prevPulseCount = 0;
-bool UpdateCounters()
+void UpdateCounters()
 {
     uint32_t currentPulseCountTimestamp = millis();
     uint32_t currentPulseCount = pulseCount;
@@ -596,10 +866,12 @@ bool UpdateCounters()
         prevPulseCount = currentPulseCount;
         prevPulseCountTimestamp = currentPulseCountTimestamp;
 
-        float prevVolumeL = context.volumeL;
+        float prevVolumeL = context.totalVolumeL;
         context.rawCounter += dp;
-        context.volumeL = CountToVolumeL(context.rawCounter);
-        context.dVolumeL = context.volumeL - prevVolumeL;
+        context.totalVolumeL = CountToVolumeL(context.rawCounter);
+        context.dVolumeL = context.totalVolumeL - prevVolumeL;
+        context.todayVolumeL += context.dVolumeL;
+
         context.dt = (float)dt / 1000.0;
         context.flowLPM = context.dVolumeL * 60.0 / context.dt;
 
@@ -609,7 +881,9 @@ bool UpdateCounters()
 
 uint32_t prevPulseCount2Timestamp = 0;
 uint32_t prevPulseCount2 = 0;
-int state = 0;
+#define stateOFF 0
+#define stateON 1
+int state = stateOFF;
 bool UpdateState()
 {
     uint32_t timestamp = millis();
@@ -623,33 +897,36 @@ bool UpdateState()
     prevPulseCount2 = currentPulseCount;
     prevPulseCount2Timestamp = timestamp;
 
-    if ((state == 0) && counting)
+    if ((state == stateOFF) && counting)
     {
 #if defined(USESERIAL)
         Serial.printf("ON (%lu)\n", dp);
 #endif
-        state = 1;
+        state = stateON;
         UpdateCounters();
     }
-    else if ((state == 1) && !counting)
+    else if ((state == stateON) && !counting)
     {
 #if defined(USESERIAL)
         Serial.println("OFF");
 #endif
-        state = 0;
+        state = stateOFF;
+        UpdateCounters();
         return true;
     }
 
     return false;
 }
 
+uint32_t waitStartTime;
+uint32_t waitInterval;
 void setup()
 {
     bool doubleResetDetected = drd.detectDoubleReset();
 
 #if defined(USESERIAL)
     Serial.begin(115200);
-    Serial.println("\nSETUP");
+    Serial.printf("\nSETUP doubleResetDetected[%d]\n", doubleResetDetected);
 #endif
 
     pinMode(LED, OUTPUT);
@@ -662,7 +939,7 @@ void setup()
     PrintConfiguration();
 
     if (!LoadContext())
-        SaveContext();
+        updateContextFromMQTT = true;
     PrintContext();
 
 #if defined(USESERIAL)
@@ -677,16 +954,21 @@ void setup()
         ESP.reset();
     }
 
+    setInterval(NTPSYNCINTERVAL);
+
     delay(1000);
     digitalWrite(LED, LEDOFF);
     drd.stop();
 
     attachInterrupt(SENSOR, sensorCallback, FALLING);
+
+    waitStartTime = millis();
+    waitInterval = configuration.resetFlowInterval;
 }
 
-bool stateTrigger = true;
 void loop()
 {
+    // WiFi
     if (WiFi.status() != WL_CONNECTED)
     {
         if (!InitWiFi())
@@ -696,6 +978,7 @@ void loop()
         }
     }
 
+    // MQTT
     if (!mqttClient.connected())
     {
         if (!InitMQTT())
@@ -705,28 +988,70 @@ void loop()
         }
     }
 
-    uint32_t waitInterval = stateTrigger ? configuration.resetFlowInterval : configuration.minPublishInterval;
-    uint32_t startTime = millis();
-    while (millis() - startTime < waitInterval)
+    while (true)
     {
         mqttClient.loop();
 
-        if (stateTrigger = UpdateState())
-            break;
+        HandleTime();
 
         yield();
+
+        uint32_t currentTime = millis();
+
+        if (UpdateState())
+        {
+            waitStartTime = currentTime;
+            waitInterval = configuration.resetFlowInterval;
+            break;
+        }
+
+        if (state != stateOFF)
+            continue;
+
+        if ((currentTime - waitStartTime) >= waitInterval)
+        {
+            waitStartTime = currentTime;
+            waitInterval = configuration.minPublishInterval;
+
+            UpdateCounters();
+            break;
+        }
+
+        if (contextChanged)
+            break;
+
+        if (softReset)
+            break;
+
+        if (sendSettings)
+        {
+            sendSettings = false;
+
+            publishSettings();
+        }
     }
 
-    context.loopCount++;
+    contextChanged = false;
+    context.publishCount++;
 
 #if defined(USESERIAL)
-    Serial.println();
+    Serial.printf("\nTime(status:%d) %s\n", timeStatus(), dateTime().c_str());
 #endif
-    UpdateCounters();
     PrintContext();
 
 #if defined(USESERIAL)
     Serial.println();
 #endif
     publishStates();
+
+    if (softReset)
+    {
+#if defined(USESERIAL)
+        Serial.printf("\nSOFT RESET REQUESTED.\n");
+#endif
+        SaveContext();
+
+        delay(2000);
+        ESP.reset();
+    }
 }

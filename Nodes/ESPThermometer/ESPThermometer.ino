@@ -19,6 +19,7 @@
 #define RTCMEM_CTX 16
 
 #define MAGIC 0x12345678
+#define MAGIC64 0x1234567890975310
 #define MAXNAMESIZE 32
 #define MAXTOPICSIZE 128
 #define MAXPAYLOADSIZE 128
@@ -71,13 +72,18 @@ bool configurationChanged = false;
 
 struct _context
 {
-    uint32_t magic = MAGIC;
+    uint64_t magic = MAGIC64;
 
     uint32_t wakeMode = WAKEMODE_INIT;
     uint32_t sleepCount = 0;
     uint32_t intervalTime = 0;
     uint32_t resetCount = 0;
+    uint32_t publishSettings = 1;
 
+    float vcc0 = 0;
+    float temperature0 = 0;
+    float humidity0 = 0;
+    float pressure0 = 0;
     float vcc = 0;
     float temperature = 0;
     float humidity = 0;
@@ -122,6 +128,8 @@ void SaveConfiguration()
 #if defined(USESERIAL)
     Serial.printf("\nCFG: configuration saved\n");
 #endif
+
+    context.publishSettings = true;
 }
 
 void PrintConfiguration(struct _configuration& cfg)
@@ -356,7 +364,7 @@ bool LoadContext()
     _context ctx;
     ESP.rtcUserMemoryRead(RTCMEM_CTX, (uint32_t*)&ctx, sizeof(ctx));
 
-    if (ctx.magic != MAGIC)
+    if (ctx.magic != MAGIC64)
     {
 #if defined(USESERIAL)
         Serial.printf("CTX: wrong magic %X\n", ctx.magic);
@@ -384,14 +392,15 @@ void SaveContext()
 void PrintContext(struct _context& ctx)
 {
 #if defined(USESERIAL)
-    Serial.printf("wakeMode     : %s\n", wakeModeText(ctx.wakeMode).c_str());
-    Serial.printf("sleepCount   : %lu\n", ctx.sleepCount);
-    Serial.printf("intervalTime : %lu\n", ctx.intervalTime);
-    Serial.printf("resetCount   : %lu\n", ctx.resetCount);
-    Serial.printf("vcc          : %s V\n", String(ctx.vcc, 3).c_str());
-    Serial.printf("temperature  : %s C\n", String(ctx.temperature, 1).c_str());
-    Serial.printf("humidity     : %s %%\n", String(ctx.humidity, 0).c_str());
-    Serial.printf("pressure     : %s hPa\n", String(ctx.pressure, 0).c_str());
+    Serial.printf("publishSettings : %d\n", ctx.publishSettings);
+    Serial.printf("wakeMode        : %s\n", wakeModeText(ctx.wakeMode).c_str());
+    Serial.printf("sleepCount      : %lu\n", ctx.sleepCount);
+    Serial.printf("intervalTime    : %lu\n", ctx.intervalTime);
+    Serial.printf("resetCount      : %lu\n", ctx.resetCount);
+    Serial.printf("vcc             : %s(%s) V\n", String(ctx.vcc, 3).c_str(), String(ctx.vcc - ctx.vcc0, 3).c_str());
+    Serial.printf("temperature     : %s(%s) C\n", String(ctx.temperature, 1).c_str(), String(ctx.temperature - ctx.temperature0, 1).c_str());
+    Serial.printf("humidity        : %s(%s) %%\n", String(ctx.humidity, 1).c_str(), String(ctx.humidity - ctx.humidity0, 1).c_str());
+    Serial.printf("pressure        : %s(%s) hPa\n", String(ctx.pressure, 1).c_str(), String(ctx.pressure - ctx.pressure0, 1).c_str());
 #endif
 }
 
@@ -560,7 +569,7 @@ String GetTopic(const char* subTopic)
     return topic;
 }
 
-bool mqttSend(const char* subTopic, const char* message, bool retained)
+bool mqttPublish(const char* subTopic, const char* message, bool retained)
 {
     uint32_t t0 = millis();
 
@@ -678,7 +687,7 @@ void CheckForNewConfiguration()
     if (configurationChanged)
     {
         configurationChanged = false;
-        mqttSend("CFG", "", true);
+        mqttPublish("CFG", "", true);
 
         PrintConfiguration();
         SaveConfiguration();
@@ -687,25 +696,20 @@ void CheckForNewConfiguration()
 
 float readVcc() // A0 voltage divider: 1M - 100k => 11:1 (vccMultiplier)
 {
-    float vcc = analogRead(A0) * configuration.vccMultiplier / 1024.0;
-    float dVcc = vcc - context.vcc;
+    context.vcc = analogRead(A0) * configuration.vccMultiplier / 1024.0;
+    float dVcc = context.vcc - context.vcc0;
     bool changed = (fabs(dVcc) >= configuration.vccThreshold);
 
 #if defined(USESERIAL)
     Serial.printf("\nVcc=%s(%s) V changed[%d]\n", String(context.vcc, 3).c_str(), String(dVcc, 3).c_str(), changed);
 #endif
 
-    if (vcc < 2.9)
+    if (context.vcc < 2.9)
     {
 #if defined(USESERIAL)
         Serial.printf("DEEP DISCHARGE PROTECTION. Sleeping forever.");
 #endif
         ESP.deepSleep(0, RF_DISABLED);
-    }
-
-    if (changed)
-    {
-        context.vcc = vcc;
     }
 
     return changed;
@@ -724,35 +728,29 @@ bool ReadBME280()
         Serial.printf("\nBME280 OK.\n");
 #endif
         bme.takeForcedMeasurement();
-        float temperature = bme.readTemperature();
-        float humidity = bme.readHumidity();
-        float pressure = bme.readPressure() / 100.0;
+        context.temperature = bme.readTemperature();
+        context.humidity = bme.readHumidity();
+        context.pressure = bme.readPressure() / 100.0;
 
-        float dT = temperature - context.temperature;
-        float dH = humidity - context.humidity;
-        float dp = pressure - context.pressure;
+        float dT = context.temperature - context.temperature0;
+        float dH = context.humidity - context.humidity0;
+        float dp = context.pressure - context.pressure0;
 
         changed = (
-            (fabs(dT) >= configuration.temperatureThreshold) || 
-            (fabs(dH) >= configuration.humidityThreshold) || 
+            (fabs(dT) >= configuration.temperatureThreshold) ||
+            (fabs(dH) >= configuration.humidityThreshold) ||
             (fabs(dp) >= configuration.pressureThreshold));
 
 #if defined(USESERIAL)
         Serial.printf("T=%s(%s) H=%s(%s) P=%s(%s) changed[%d]\n",
-            String(temperature, 1).c_str(),
+            String(context.temperature, 1).c_str(),
             String(dT, 2).c_str(),
-            String(humidity, 0).c_str(),
-            String(dH, 1).c_str(),
-            String(pressure, 0).c_str(),
-            String(dp, 1).c_str(),
+            String(context.humidity, 1).c_str(),
+            String(dH, 2).c_str(),
+            String(context.pressure, 1).c_str(),
+            String(dp, 2).c_str(),
             changed);
 #endif
-        if (changed)
-        {
-            context.temperature = temperature;
-            context.humidity = humidity;
-            context.pressure = pressure;
-        }
     }
     else
     {
@@ -764,7 +762,7 @@ bool ReadBME280()
     return changed;
 }
 
-void Send()
+void PublishState()
 {
 #if defined(USESERIAL)
     Serial.println();
@@ -778,19 +776,50 @@ void Send()
 #endif
             CheckForNewConfiguration();
 
+            const int bufferLen = 1024;
+            char buffer[bufferLen];
+            buffer[bufferLen - 1] = 0;
+
+            if (context.publishSettings)
+            {
+#if defined(USESERIAL)
+                Serial.println();
+#endif
+                snprintf(buffer, bufferLen - 1, "{ \"mqttCfgEnabled\": %d, \"ssid\": \"%s\", \"ipLocal\": \"%s\", \"mqttServer\": \"%s\", \"sleepTime\": %lu, \"maxIntervalTime\": %lu, \"vccMultiplier\": %s, \"vccThreshold\": %s, \"temperatureThreshold\": %s, \"humidityThreshold\": %s, \"pressureThreshold\": %s }",
+                    configuration.mqttCfgEnabled,
+                    configuration.ssid, IPAddress(configuration.ipLocal).toString().c_str(), IPAddress(configuration.mqttServer).toString().c_str(),
+                    configuration.sleepTime, configuration.maxIntervalTime,
+                    String(configuration.vccMultiplier, 3).c_str(),
+                    String(configuration.vccThreshold, 3).c_str(), String(configuration.temperatureThreshold, 2).c_str(), String(configuration.humidityThreshold, 2).c_str(), String(configuration.pressureThreshold, 2).c_str()
+                );
+
+                bool succeeded = mqttPublish("SETTINGS", buffer, true);
+
+                if (succeeded)
+                    context.publishSettings = false;
+            }
+
 #if defined(USESERIAL)
             Serial.println();
 #endif
-            char states[1024];
-            snprintf(states, 1024, "{ \"sleepCount\": %d, \"vcc\": %s, \"temperature\": %s, \"humidity\": %s, \"pressure\": %s, \"RSSI\": %d }",
+            snprintf(buffer, bufferLen - 1, "{ \"sleepCount\": %lu, \"vcc\": %s, \"temperature\": %s, \"humidity\": %s, \"pressure\": %s, \"RSSI\": %ld }",
                 context.sleepCount,
                 String(context.vcc, 3).c_str(),
                 String(context.temperature, 1).c_str(),
-                String(context.humidity, 0).c_str(),
-                String(context.pressure, 0).c_str(),
+                String(context.humidity, 1).c_str(),
+                String(context.pressure, 1).c_str(),
                 WiFi.RSSI()
             );
-            mqttSend("STATES", states, true);
+
+            bool succeeded = mqttPublish("STATES", buffer, true);
+
+            if (succeeded)
+            {
+                context.vcc0 = context.vcc;
+                context.temperature0 = context.temperature;
+                context.humidity0 = context.humidity;
+                context.pressure0 = context.pressure;
+            }
 
             mqttClient.disconnect();
         }
@@ -849,6 +878,7 @@ void loop()
     if (resetDetected)
     {
         context.resetCount++;
+
 #if defined(USESERIAL)
         Serial.printf("\nRESET DETECTED. resetCount[%lu]\n", context.resetCount);
 #endif
@@ -922,7 +952,7 @@ void loop()
     Serial.printf("\n(WAKEMODE_RFON) sending ...\n");
 #endif
 
-    Send();
+    PublishState();
 
     context.intervalTime = 0;
     context.resetCount = 0;
