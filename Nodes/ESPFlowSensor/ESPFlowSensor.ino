@@ -1,5 +1,9 @@
 #include <DoubleResetDetector.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPUpdateServer.h>
+#include <ArduinoOTA.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
 #include <EEPROM.h>
@@ -9,6 +13,9 @@
 
 #define USESERIAL
 #define USELEDFLASHS
+
+#define VERSION "V0.9"
+#define VERSIONSTRING VERSION " (ESPFlowSensor " __DATE__ " " __TIME__ ")"
 
 #define LED 2
 #define LEDON 0
@@ -28,10 +35,22 @@
 #define WIFIMANAGERTIMEOUT 300
 #define NTPSYNCINTERVAL 6*3600
 
+#define TOPIC_CFG "CFG"
+#define TOPIC_SETTINGS "SETTINGS"
+#define TOPIC_STATES "STATES"
+#define TOPIC_LWT "LWT"
+#define LWTMESSAGE "{ \"online\": 0 }"
+
+#define OTA_PATH "/firmware"
+#define OTA_USER "admin"
+#define OTA_PWD "didhvn#1"
+
 ADC_MODE(ADC_TOUT);
 
 DoubleResetDetector drd(5, RTCMEM_DRD);
 WiFiClient wifiClient;
+ESP8266WebServer httpServer(80);
+ESP8266HTTPUpdateServer httpUpdater;
 PubSubClient mqttClient("0.0.0.0", 1883, 0, wifiClient);
 Timezone tz;
 
@@ -101,7 +120,7 @@ bool LoadConfiguration()
     if (cfg.magic != MAGIC)
     {
 #if defined(USESERIAL)
-        Serial.printf("CFG: wrong magic %X\n", cfg.magic);
+        Serial.printf("CFG: wrong magic %X\r\n", cfg.magic);
 #endif
         snprintf(configuration.name, MAXNAMESIZE, "ESP-%s", WiFi.macAddress().c_str());
         return false;
@@ -109,7 +128,7 @@ bool LoadConfiguration()
 
     configuration = cfg;
 #if defined(USESERIAL)
-    Serial.printf("CFG: configuration loaded\n");
+    Serial.printf("CFG: configuration loaded\r\n");
 #endif
 
     return true;
@@ -122,7 +141,7 @@ void SaveConfiguration()
     EEPROM.end();
 
 #if defined(USESERIAL)
-    Serial.printf("CFG: configuration saved\n");
+    Serial.printf("CFG: configuration saved\r\n");
 #endif
 
     sendSettings = true;
@@ -131,20 +150,20 @@ void SaveConfiguration()
 void PrintConfiguration(struct _configuration& cfg)
 {
 #if defined(USESERIAL)
-    Serial.printf("ssid               : %s\n", cfg.ssid);
-    Serial.printf("password           : %s\n", cfg.password);
-    Serial.printf("ipLocal            : %s\n", IPAddress(cfg.ipLocal).toString().c_str());
-    Serial.printf("subnet             : %s\n", IPAddress(cfg.subnet).toString().c_str());
-    Serial.printf("gateway            : %s\n", IPAddress(cfg.gateway).toString().c_str());
-    Serial.printf("dnsServer          : %s\n", IPAddress(cfg.dnsServer).toString().c_str());
-    Serial.printf("mqttServer         : %s\n", IPAddress(cfg.mqttServer).toString().c_str());
-    Serial.printf("name               : %s\n", cfg.name);
-    Serial.printf("mqttTopicBase      : %s\n", cfg.mqttTopicBase);
-    Serial.printf("measureInterval    : %lu\n", cfg.measureInterval);
-    Serial.printf("minPublishInterval : %lu\n", cfg.minPublishInterval);
-    Serial.printf("resetFlowInterval  : %lu\n", cfg.resetFlowInterval);
-    Serial.printf("countsPerLiter     : %lu\n", cfg.countsPerLiter);
-    Serial.printf("timezone           : %s\n", cfg.timezone);
+    Serial.printf("ssid               : %s\r\n", cfg.ssid);
+    Serial.printf("password           : %s\r\n", cfg.password);
+    Serial.printf("ipLocal            : %s\r\n", IPAddress(cfg.ipLocal).toString().c_str());
+    Serial.printf("subnet             : %s\r\n", IPAddress(cfg.subnet).toString().c_str());
+    Serial.printf("gateway            : %s\r\n", IPAddress(cfg.gateway).toString().c_str());
+    Serial.printf("dnsServer          : %s\r\n", IPAddress(cfg.dnsServer).toString().c_str());
+    Serial.printf("mqttServer         : %s\r\n", IPAddress(cfg.mqttServer).toString().c_str());
+    Serial.printf("name               : %s\r\n", cfg.name);
+    Serial.printf("mqttTopicBase      : %s\r\n", cfg.mqttTopicBase);
+    Serial.printf("measureInterval    : %lu\r\n", cfg.measureInterval);
+    Serial.printf("minPublishInterval : %lu\r\n", cfg.minPublishInterval);
+    Serial.printf("resetFlowInterval  : %lu\r\n", cfg.resetFlowInterval);
+    Serial.printf("countsPerLiter     : %lu\r\n", cfg.countsPerLiter);
+    Serial.printf("timezone           : %s\r\n", cfg.timezone);
 #endif
 }
 
@@ -153,7 +172,7 @@ void PrintConfiguration() { PrintConfiguration(configuration); }
 bool UpdateConfiguration(String message)
 {
 #if defined(USESERIAL)
-    Serial.printf("UPDCFG: message[%s]\n", message.c_str());
+    Serial.printf("UPDCFG: message[%s]\r\n", message.c_str());
 #endif
 
     bool updated = false;
@@ -167,7 +186,7 @@ bool UpdateConfiguration(String message)
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: magic[%X]\n", configuration.magic);
+        Serial.printf("UPDCFG: magic[%X]\r\n", configuration.magic);
 #endif
     }
 
@@ -178,7 +197,7 @@ bool UpdateConfiguration(String message)
         softReset = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: ssid[%s]\n", configuration.ssid);
+        Serial.printf("UPDCFG: ssid[%s]\r\n", configuration.ssid);
 #endif
     }
 
@@ -189,7 +208,7 @@ bool UpdateConfiguration(String message)
         softReset = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: password[%s]\n", configuration.password);
+        Serial.printf("UPDCFG: password[%s]\r\n", configuration.password);
 #endif
     }
 
@@ -202,7 +221,7 @@ bool UpdateConfiguration(String message)
         softReset = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: ipLocal[%s]\n", IPAddress(configuration.ipLocal).toString().c_str());
+        Serial.printf("UPDCFG: ipLocal[%s]\r\n", IPAddress(configuration.ipLocal).toString().c_str());
 #endif
     }
 
@@ -215,7 +234,7 @@ bool UpdateConfiguration(String message)
         softReset = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: subnet[%s]\n", IPAddress(configuration.subnet).toString().c_str());
+        Serial.printf("UPDCFG: subnet[%s]\r\n", IPAddress(configuration.subnet).toString().c_str());
 #endif
     }
 
@@ -228,7 +247,7 @@ bool UpdateConfiguration(String message)
         softReset = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: gateway[%s]\n", IPAddress(configuration.gateway).toString().c_str());
+        Serial.printf("UPDCFG: gateway[%s]\r\n", IPAddress(configuration.gateway).toString().c_str());
 #endif
     }
 
@@ -241,7 +260,7 @@ bool UpdateConfiguration(String message)
         softReset = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: dnsServer[%s]\n", IPAddress(configuration.dnsServer).toString().c_str());
+        Serial.printf("UPDCFG: dnsServer[%s]\r\n", IPAddress(configuration.dnsServer).toString().c_str());
 #endif
     }
 
@@ -254,7 +273,7 @@ bool UpdateConfiguration(String message)
         softReset = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: mqttServer[%s]\n", IPAddress(configuration.mqttServer).toString().c_str());
+        Serial.printf("UPDCFG: mqttServer[%s]\r\n", IPAddress(configuration.mqttServer).toString().c_str());
 #endif
     }
 
@@ -265,47 +284,47 @@ bool UpdateConfiguration(String message)
         softReset = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: name[%s]\n", configuration.name);
+        Serial.printf("UPDCFG: name[%s]\r\n", configuration.name);
 #endif
     }
 
     if (root.containsKey("measureInterval"))
     {
-        configuration.measureInterval = root["measureInterval"].as<uint32_t>();
+        configuration.measureInterval = root["measureInterval"];
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: measureInterval[%lu]\n", configuration.measureInterval);
+        Serial.printf("UPDCFG: measureInterval[%lu]\r\n", configuration.measureInterval);
 #endif
     }
 
     if (root.containsKey("minPublishInterval"))
     {
-        configuration.minPublishInterval = root["minPublishInterval"].as<uint32_t>();
+        configuration.minPublishInterval = root["minPublishInterval"];
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: minPublishInterval[%lu]\n", configuration.minPublishInterval);
+        Serial.printf("UPDCFG: minPublishInterval[%lu]\r\n", configuration.minPublishInterval);
 #endif
     }
 
     if (root.containsKey("resetFlowInterval"))
     {
-        configuration.resetFlowInterval = root["resetFlowInterval"].as<uint32_t>();
+        configuration.resetFlowInterval = root["resetFlowInterval"];
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: resetFlowInterval[%lu]\n", configuration.resetFlowInterval);
+        Serial.printf("UPDCFG: resetFlowInterval[%lu]\r\n", configuration.resetFlowInterval);
 #endif
     }
 
     if (root.containsKey("countsPerLiter"))
     {
-        configuration.countsPerLiter = root["countsPerLiter"].as<uint32_t>();
+        configuration.countsPerLiter = root["countsPerLiter"];
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: countsPerLiter[%lu]\n", configuration.countsPerLiter);
+        Serial.printf("UPDCFG: countsPerLiter[%lu]\r\n", configuration.countsPerLiter);
 #endif
     }
 
@@ -315,40 +334,40 @@ bool UpdateConfiguration(String message)
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: timezone[%s]\n", configuration.timezone);
+        Serial.printf("UPDCFG: timezone[%s]\r\n", configuration.timezone);
 #endif
         ConfigureTime();
     }
 
     if (root.containsKey("totalVolumeL"))
     {
-        float totalVolumeL = root["totalVolumeL"].as<float>();
+        float totalVolumeL = root["totalVolumeL"];
         context.rawCounter = VolumeLToCount(totalVolumeL);
         context.totalVolumeL = CountToVolumeL(context.rawCounter);
         contextChanged = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: totalVolumeL[%s]\n", String(context.totalVolumeL, 3).c_str());
+        Serial.printf("UPDCFG: totalVolumeL[%s]\r\n", String(context.totalVolumeL, 3).c_str());
 #endif
     }
 
     if (root.containsKey("todayVolumeL"))
     {
-        context.todayVolumeL = root["todayVolumeL"].as<float>();
+        context.todayVolumeL = root["todayVolumeL"];
         contextChanged = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: todayVolumeL[%s]\n", String(context.todayVolumeL, 3).c_str());
+        Serial.printf("UPDCFG: todayVolumeL[%s]\r\n", String(context.todayVolumeL, 3).c_str());
 #endif
     }
 
     if (root.containsKey("yesterdayVolumeL"))
     {
-        context.yesterdayVolumeL = root["yesterdayVolumeL"].as<float>();
+        context.yesterdayVolumeL = root["yesterdayVolumeL"];
         contextChanged = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCFG: yesterdayVolumeL[%s]\n", String(context.yesterdayVolumeL, 3).c_str());
+        Serial.printf("UPDCFG: yesterdayVolumeL[%s]\r\n", String(context.yesterdayVolumeL, 3).c_str());
 #endif
     }
 
@@ -363,7 +382,7 @@ bool LoadContext()
     if (ctx.magic != MAGIC)
     {
 #if defined(USESERIAL)
-        Serial.printf("CTX: wrong magic %X\n", ctx.magic);
+        Serial.printf("CTX: wrong magic %X\r\n", ctx.magic);
 #endif
         return false;
     }
@@ -371,7 +390,7 @@ bool LoadContext()
     context = ctx;
 
 #if defined(USESERIAL)
-    Serial.printf("CTX: context loaded\n");
+    Serial.printf("CTX: context loaded\r\n");
 #endif
     return true;
 }
@@ -381,21 +400,21 @@ void SaveContext()
     ESP.rtcUserMemoryWrite(RTCMEM_CTX, (uint32_t*)&context, sizeof(context));
 
 #if defined(USESERIAL)
-    Serial.printf("CTX: context saved\n");
+    Serial.printf("CTX: context saved\r\n");
 #endif
 }
 
 void PrintContext(struct _context& ctx)
 {
 #if defined(USESERIAL)
-    Serial.printf("publishCount     : %lu\n", context.publishCount);
-    Serial.printf("rawCounter       : %lu\n", context.rawCounter);
-    Serial.printf("totalVolumeL     : %s\n", String(context.totalVolumeL, 3).c_str());
-    Serial.printf("deltaVolumeL     : %s\n", String(context.deltaVolumeL, 3).c_str());
-    Serial.printf("todayVolumeL     : %s\n", String(context.todayVolumeL, 3).c_str());
-    Serial.printf("yesterdayVolumeL : %s\n", String(context.yesterdayVolumeL, 3).c_str());
-    Serial.printf("dt               : %s\n", String(context.dt, 3).c_str());
-    Serial.printf("flowLPM          : %s\n", String(context.flowLPM, 3).c_str());
+    Serial.printf("publishCount     : %lu\r\n", context.publishCount);
+    Serial.printf("rawCounter       : %lu\r\n", context.rawCounter);
+    Serial.printf("totalVolumeL     : %s\r\n", String(context.totalVolumeL, 3).c_str());
+    Serial.printf("deltaVolumeL     : %s\r\n", String(context.deltaVolumeL, 3).c_str());
+    Serial.printf("todayVolumeL     : %s\r\n", String(context.todayVolumeL, 3).c_str());
+    Serial.printf("yesterdayVolumeL : %s\r\n", String(context.yesterdayVolumeL, 3).c_str());
+    Serial.printf("dt               : %s\r\n", String(context.dt, 3).c_str());
+    Serial.printf("flowLPM          : %s\r\n", String(context.flowLPM, 3).c_str());
 #endif
 }
 
@@ -404,17 +423,27 @@ void PrintContext() { PrintContext(context); }
 bool UpdateContext(String message)
 {
 #if defined(USESERIAL)
-    Serial.printf("UPDCTX: message[%s]\n", message.c_str());
+    Serial.printf("UPDCTX: message[%s]\r\n", message.c_str());
 #endif
 
     bool updated = false;
     StaticJsonBuffer<JSON_OBJECT_SIZE(32) + 40> jsonBuffer;
 
     JsonObject& root = jsonBuffer.parse(message);
-
-    if (root.containsKey("rawCounter"))
+    
+    if (!root.containsKey("STATES"))
     {
-        context.rawCounter = root["rawCounter"].as<uint32_t>();
+#if defined(USESERIAL)
+        Serial.printf("UPDCTX: missing object \"STATES\"\r\n");
+#endif
+        return false;
+    }
+
+    JsonObject& states = root["STATES"];
+
+    if (states.containsKey("rawCounter"))
+    {
+        context.rawCounter = states["rawCounter"];
         context.totalVolumeL = CountToVolumeL(context.rawCounter);
         context.deltaVolumeL = 0;
         context.flowLPM = 0;
@@ -423,29 +452,29 @@ bool UpdateContext(String message)
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCTX: rawCounter[%lu]\n", context.rawCounter);
+        Serial.printf("UPDCTX: rawCounter[%lu]\r\n", context.rawCounter);
 #endif
     }
 
-    if (root.containsKey("todayVolumeL"))
+    if (states.containsKey("todayVolumeL"))
     {
-        context.todayVolumeL = root["todayVolumeL"].as<float>();
+        context.todayVolumeL = states["todayVolumeL"];
 
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCTX: todayVolumeL[%s]\n", String(context.todayVolumeL, 3).c_str());
+        Serial.printf("UPDCTX: todayVolumeL[%s]\r\n", String(context.todayVolumeL, 3).c_str());
 #endif
     }
 
-    if (root.containsKey("yesterdayVolumeL"))
+    if (states.containsKey("yesterdayVolumeL"))
     {
-        context.yesterdayVolumeL = root["yesterdayVolumeL"].as<float>();
+        context.yesterdayVolumeL = states["yesterdayVolumeL"];
 
         updated = true;
 
 #if defined(USESERIAL)
-        Serial.printf("UPDCTX: yesterdayVolumeL[%s]\n", String(context.yesterdayVolumeL, 3).c_str());
+        Serial.printf("UPDCTX: yesterdayVolumeL[%s]\r\n", String(context.yesterdayVolumeL, 3).c_str());
 #endif
     }
 
@@ -462,7 +491,7 @@ bool ConfigureTime()
     uint32_t dt = millis() - t0;
 
 #if defined(USESERIAL)
-    Serial.printf("TIMECFG: location[%s] result[%d] dt[%d ms]\n", configuration.timezone, succeeded, dt);
+    Serial.printf("TIMECFG: location[%s] result[%d] dt[%d ms]\r\n", configuration.timezone, succeeded, dt);
 #endif
 
     timeInitialized = false;
@@ -485,7 +514,7 @@ void SetDayCounterEvent()
     dayCounterEventHandle = setEvent(HandleDayCounter, _eventTime);
 
 #if defined(USESERIAL)
-    Serial.printf("(%s): NEXT DAY COUNTER RESET: %s\n", dateTime(_now).c_str(), dateTime(_eventTime).c_str());
+    Serial.printf("(%s): NEXT DAY COUNTER RESET: %s\r\n", dateTime(_now).c_str(), dateTime(_eventTime).c_str());
 #endif
 }
 
@@ -512,11 +541,54 @@ void HandleTime()
             timeInitialized = true;
 
 #if defined(USESERIAL)
-            Serial.printf("TIME INITIALIZED: %s\n", dateTime().c_str());
+            Serial.printf("TIME INITIALIZED: %s\r\n", dateTime().c_str());
 #endif
             SetDayCounterEvent();
         }
     }
+}
+
+void ConfigureHttpOTA()
+{
+    MDNS.begin(configuration.name);
+
+    httpUpdater.setup(&httpServer, OTA_PATH, OTA_USER, OTA_PWD);
+    httpServer.begin();
+
+    MDNS.addService("http", "tcp", 80);
+
+#if defined(USESERIAL)
+    Serial.printf("OTA: URL[http://%s.lan%s] user[%s] pwd[%s]\r\n", configuration.name, OTA_PATH, OTA_USER, OTA_PWD);
+#endif
+}
+
+void ConfigureArduinoOTA()
+{
+#if defined(USESERIAL)
+    ArduinoOTA.onStart([]() {
+        Serial.println("ArduinoOTA: Start");
+    });
+    ArduinoOTA.onEnd([]() {
+        Serial.println("ArduinoOTA: ArduinoOTA: End");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        Serial.printf("ArduinoOTA: Progress: %u%%\r", (progress / (total / 100)));
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        Serial.printf("ArduinoOTA: Error[%u]: ", error);
+        if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+        else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+        else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+        else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+        else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+#endif
+
+    ArduinoOTA.begin();
+
+#if defined(USESERIAL)
+    Serial.println("ArduinoOTA: Initialized!");
+#endif
 }
 
 bool InitialWiFiConfiguration()
@@ -524,7 +596,7 @@ bool InitialWiFiConfiguration()
     digitalWrite(LED, LEDON);
 
 #if defined(USESERIAL)
-    Serial.printf("WIFIMAN: Starting WifiManager for %d seconds ...\n", WIFIMANAGERTIMEOUT);
+    Serial.printf("WIFIMAN: Starting WifiManager for %d seconds ...\r\n", WIFIMANAGERTIMEOUT);
 #endif
 
     WiFiManager wifiManager;
@@ -541,7 +613,7 @@ bool InitialWiFiConfiguration()
     if (succeeded = wifiManager.startConfigPortal())
     {
 #if defined(USESERIAL)
-        Serial.printf("WIFIMAN: OK. SSID[%s] PWD[%s]\n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+        Serial.printf("WIFIMAN: OK. SSID[%s] PWD[%s]\r\n", WiFi.SSID().c_str(), WiFi.psk().c_str());
 #endif
 
         strncpy(configuration.ssid, WiFi.SSID().c_str(), MAXNAMESIZE);
@@ -565,7 +637,7 @@ bool InitialWiFiConfiguration()
     else
     {
 #if defined(USESERIAL)
-        Serial.printf("WIFIMAN: FAILED. SSID[%s] PWD[%s]\n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+        Serial.printf("WIFIMAN: FAILED. SSID[%s] PWD[%s]\r\n", WiFi.SSID().c_str(), WiFi.psk().c_str());
 #endif
     }
 
@@ -601,18 +673,21 @@ bool InitWiFi()
     if (wifiStatus == WL_CONNECTED)
     {
 #if defined(USESERIAL)
-        Serial.printf("WiFi connected. localIP[%s] dt[%d ms]\n", WiFi.localIP().toString().c_str(), dt);
+        Serial.printf("WiFi connected. localIP[%s] dt[%d ms]\r\n", WiFi.localIP().toString().c_str(), dt);
 #endif
         WiFi.setAutoConnect(true);
         WiFi.setAutoReconnect(true);
         WiFi.setSleepMode(WIFI_MODEM_SLEEP);
 
         ConfigureTime();
+
+        ConfigureHttpOTA();
+        ConfigureArduinoOTA();
     }
     else
     {
 #if defined(USESERIAL)
-        Serial.printf("WiFi connection FAILED. status[%d] dt[%d ms]\n", wifiStatus, dt);
+        Serial.printf("WiFi connection FAILED. status[%d] dt[%d ms]\r\n", wifiStatus, dt);
 #endif
     }
 
@@ -626,31 +701,33 @@ bool InitMQTT()
     if (mqttClient.connected())
     {
 #if defined(USESERIAL)
-        Serial.printf("MQTT already connected.\n");
+        Serial.printf("MQTT already connected.\r\n");
 #endif
         return true;
     }
 
     mqttClient.setCallback(mqttCallback);
     mqttClient.setServer(configuration.mqttServer, 1883);
-    bool connected = mqttClient.connect(WiFi.localIP().toString().c_str());
+    bool connected = mqttClient.connect(WiFi.localIP().toString().c_str(), GetTopic(TOPIC_LWT).c_str(), 1, true, LWTMESSAGE);
 
     uint32_t dt = millis() - t0;
 
     if (connected)
     {
 #if defined(USESERIAL)
-        Serial.printf("MQTT connected. dt[%d ms]\n", dt);
+        Serial.printf("MQTT connected. dt[%d ms]\r\n", dt);
 #endif
-        mqttSubscribe("CFG");
+        publishOnline();
+
+        mqttSubscribe(TOPIC_CFG);
 
         if (updateContextFromMQTT)
-            mqttSubscribe("STATES");
+            mqttSubscribe(TOPIC_STATES);
     }
     else
     {
 #if defined(USESERIAL)
-        Serial.printf("MQTT connection FAILED. dt[%d ms]\n", dt);
+        Serial.printf("MQTT connection FAILED. dt[%d ms]\r\n", dt);
 #endif
     }
 
@@ -682,7 +759,7 @@ bool mqttPublish(const char* subTopic, const char* message, bool retained)
     if (!mqttClient.connected())
     {
 #if defined(USESERIAL)
-        Serial.print("FAILED. NOT CONNECTED.\n");
+        Serial.print("FAILED. NOT CONNECTED.\r\n");
 #endif
         return false;
     }
@@ -692,7 +769,7 @@ bool mqttPublish(const char* subTopic, const char* message, bool retained)
     uint32_t dt = millis() - t0;
 
 #if defined(USESERIAL)
-    Serial.printf("%s. dt[%d ms]\n", succeeded ? "OK" : "FAILED", dt);
+    Serial.printf("%s. dt[%d ms]\r\n", succeeded ? "OK" : "FAILED", dt);
 #endif
 
     return succeeded;
@@ -711,7 +788,7 @@ bool mqttSubscribe(const char* subTopic)
     if (!mqttClient.connected())
     {
 #if defined(USESERIAL)
-        Serial.print("FAILED. NOT CONNECTED.\n");
+        Serial.print("FAILED. NOT CONNECTED.\r\n");
 #endif
         return false;
     }
@@ -721,7 +798,7 @@ bool mqttSubscribe(const char* subTopic)
     uint32_t dt = millis() - t0;
 
 #if defined(USESERIAL)
-    Serial.printf("%s. dt[%d ms]\n", succeeded ? "OK" : "FAILED", dt);
+    Serial.printf("%s. dt[%d ms]\r\n", succeeded ? "OK" : "FAILED", dt);
 #endif
 
     return succeeded;
@@ -740,7 +817,7 @@ bool mqttUnsubscribe(const char* subTopic)
     if (!mqttClient.connected())
     {
 #if defined(USESERIAL)
-        Serial.print("FAILED. NOT CONNECTED.\n");
+        Serial.print("FAILED. NOT CONNECTED.\r\n");
 #endif
         return false;
     }
@@ -750,7 +827,7 @@ bool mqttUnsubscribe(const char* subTopic)
     uint32_t dt = millis() - t0;
 
 #if defined(USESERIAL)
-    Serial.printf("%s. dt[%d ms]\n", succeeded ? "OK" : "FAILED", dt);
+    Serial.printf("%s. dt[%d ms]\r\n", succeeded ? "OK" : "FAILED", dt);
 #endif
 
     return succeeded;
@@ -763,12 +840,12 @@ void mqttCallback(char* topic, uint8_t* payload, uint length)
         message += (char)payload[i];
 
 #if defined(USESERIAL)
-    Serial.printf("topic[%s] payload(%d)[%s]\n", topic, length, message.c_str());
+    Serial.printf("topic[%s] payload(%d)[%s]\r\n", topic, length, message.c_str());
 #endif
 
     String strTopic(topic);
 
-    if (strTopic.endsWith("/CFG"))
+    if (strTopic.endsWith("/" TOPIC_CFG))
     {
         if (message.length() > 0)
         {
@@ -777,11 +854,11 @@ void mqttCallback(char* topic, uint8_t* payload, uint length)
                 PrintConfiguration();
                 SaveConfiguration();
 
-                mqttPublish("CFG", "", true);
+                mqttPublish(TOPIC_CFG, "", true);
             }
         }
     }
-    else if (strTopic.endsWith("/STATES"))
+    else if (strTopic.endsWith("/" TOPIC_STATES))
     {
         if (message.length() > 0)
         {
@@ -793,18 +870,24 @@ void mqttCallback(char* topic, uint8_t* payload, uint length)
                     SaveContext();
 
                     updateContextFromMQTT = false;
+                    contextChanged = true;
 
-                    mqttUnsubscribe("STATES");
+                    mqttUnsubscribe(TOPIC_STATES);
                 }
             }
         }
     }
 }
 
+void publishOnline()
+{
+    mqttPublish(TOPIC_LWT, "{ \"online\": 1 }", true);
+}
+
 void publishStates()
 {
     char states[1024];
-    snprintf(states, 1023, "{ \"rawCounter\": %d, \"totalVolumeL\": %s, \"deltaVolumeL\": %s, \"flowLPM\": %s, \"todayVolumeL\": %s, \"yesterdayVolumeL\": %s, \"publishCount\": %d, \"RSSI\": %d }",
+    snprintf(states, 1023, "{ \"STATES\": { \"rawCounter\": %d, \"totalVolumeL\": %s, \"deltaVolumeL\": %s, \"flowLPM\": %s, \"todayVolumeL\": %s, \"yesterdayVolumeL\": %s, \"publishCount\": %d, \"RSSI\": %d } }",
         context.rawCounter,
         String(context.totalVolumeL, 3).c_str(),
         String(context.deltaVolumeL, 3).c_str(),
@@ -815,21 +898,22 @@ void publishStates()
         WiFi.RSSI()
     );
 
-    if (mqttPublish("STATES", states, true))
+    if (mqttPublish(TOPIC_STATES, states, true))
         flashLED();
 }
 
 void publishSettings()
 {
     char settings[1024];
-    snprintf(settings, 1023, "{ \"ssid\": \"%s\", \"ipLocal\": \"%s\", \"mqttServer\": \"%s\", \"minPublishInterval\": %lu, \"resetFlowInterval\": %lu, \"measureInterval\": %lu, \"countsPerLiter\": %lu, \"timezone\": \"%s\" }",
+    snprintf(settings, 1023, "{ \"SETTINGS\": { \"version\": \"%s\", \"ssid\": \"%s\", \"ipLocal\": \"%s\", \"mqttServer\": \"%s\", \"minPublishInterval\": %lu, \"resetFlowInterval\": %lu, \"measureInterval\": %lu, \"countsPerLiter\": %lu, \"timezone\": \"%s\" } }",
+        VERSIONSTRING,
         configuration.ssid, IPAddress(configuration.ipLocal).toString().c_str(), IPAddress(configuration.mqttServer).toString().c_str(),
         configuration.minPublishInterval, configuration.resetFlowInterval,
         configuration.measureInterval, configuration.countsPerLiter,
         configuration.timezone
     );
 
-    bool succeeded = mqttPublish("SETTINGS", settings, true);
+    bool succeeded = mqttPublish(TOPIC_SETTINGS, settings, true);
 }
 
 volatile int pulseCount = 0;
@@ -900,7 +984,7 @@ bool UpdateState()
     if ((state == stateOFF) && counting)
     {
 #if defined(USESERIAL)
-        Serial.printf("ON (%lu)\n", dp);
+        Serial.printf("ON (%lu)\r\n", dp);
 #endif
         state = stateON;
         UpdateCounters();
@@ -926,13 +1010,13 @@ void setup()
 
 #if defined(USESERIAL)
     Serial.begin(115200);
-    Serial.printf("\nSETUP doubleResetDetected[%d]\n", doubleResetDetected);
+    Serial.printf("\r\nSETUP doubleResetDetected[%d]\r\n", doubleResetDetected);
 #endif
 
     pinMode(LED, OUTPUT);
     digitalWrite(LED, LEDON);
 
-    pinMode(SENSOR, INPUT_PULLUP);
+    pinMode(SENSOR, INPUT);
 
     if (!LoadConfiguration())
         SaveConfiguration();
@@ -990,6 +1074,9 @@ void loop()
 
     while (true)
     {
+        ArduinoOTA.handle();
+        httpServer.handleClient();
+
         mqttClient.loop();
 
         HandleTime();
@@ -1035,7 +1122,7 @@ void loop()
     context.publishCount++;
 
 #if defined(USESERIAL)
-    Serial.printf("\nTime(status:%d) %s\n", timeStatus(), dateTime().c_str());
+    Serial.printf("\r\nTime(status:%d) %s\r\n", timeStatus(), dateTime().c_str());
 #endif
     PrintContext();
 
@@ -1047,7 +1134,7 @@ void loop()
     if (softReset)
     {
 #if defined(USESERIAL)
-        Serial.printf("\nSOFT RESET REQUESTED.\n");
+        Serial.printf("\r\nSOFT RESET REQUESTED.\r\n");
 #endif
         SaveContext();
 
