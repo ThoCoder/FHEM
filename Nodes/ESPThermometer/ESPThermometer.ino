@@ -76,6 +76,7 @@ struct _context
 
     uint32_t wakeMode = WAKEMODE_INIT;
     uint32_t sleepCount = 0;
+    uint32_t publishCount = 0;
     uint32_t intervalTime = 0;
     uint32_t resetCount = 0;
     uint32_t publishSettings = 1;
@@ -395,6 +396,7 @@ void PrintContext(struct _context& ctx)
     Serial.printf("publishSettings : %d\n", ctx.publishSettings);
     Serial.printf("wakeMode        : %s\n", wakeModeText(ctx.wakeMode).c_str());
     Serial.printf("sleepCount      : %lu\n", ctx.sleepCount);
+    Serial.printf("publishCount    : %lu\n", ctx.publishCount);
     Serial.printf("intervalTime    : %lu\n", ctx.intervalTime);
     Serial.printf("resetCount      : %lu\n", ctx.resetCount);
     Serial.printf("vcc             : %s(%s) V\n", String(ctx.vcc, 3).c_str(), String(ctx.vcc - ctx.vcc0, 3).c_str());
@@ -802,8 +804,9 @@ void PublishState()
 #if defined(USESERIAL)
             Serial.println();
 #endif
-            snprintf(buffer, bufferLen - 1, "{ \"sleepCount\": %lu, \"vcc\": %s, \"temperature\": %s, \"humidity\": %s, \"pressure\": %s, \"RSSI\": %ld }",
+            snprintf(buffer, bufferLen - 1, "{ \"sleepCount\": %lu, \"publishCount\": %lu, \"vcc\": %s, \"temperature\": %s, \"humidity\": %s, \"pressure\": %s, \"RSSI\": %ld }",
                 context.sleepCount,
+                context.publishCount,
                 String(context.vcc, 3).c_str(),
                 String(context.temperature, 1).c_str(),
                 String(context.humidity, 1).c_str(),
@@ -952,6 +955,7 @@ void loop()
     Serial.printf("\n(WAKEMODE_RFON) sending ...\n");
 #endif
 
+    context.publishCount++;
     PublishState();
 
     context.intervalTime = 0;
