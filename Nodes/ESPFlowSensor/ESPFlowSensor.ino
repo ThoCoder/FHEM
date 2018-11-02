@@ -3,6 +3,7 @@
 #include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
+#include <ESP8266FtpServer.h>
 #include <ArduinoOTA.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
@@ -10,6 +11,7 @@
 #include <ArduinoJson.hpp>
 #include <ArduinoJson.h>
 #include <ezTime.h>
+#include <fs.h>
 
 #define USESERIAL
 #define USELEDFLASHS
@@ -23,6 +25,7 @@
 #define FLASHINTERVAL 20
 
 #define SENSOR 13
+#define SENSOR_ECHO 12
 
 #define RTCMEM_DRD 0
 #define RTCMEM_CTX 16
@@ -45,12 +48,15 @@
 #define OTA_USER "admin"
 #define OTA_PWD "didhvn#1"
 
+#define WEBCFG_INDEX_PAGE "/index.html"
+
 ADC_MODE(ADC_TOUT);
 
 DoubleResetDetector drd(5, RTCMEM_DRD);
 WiFiClient wifiClient;
 ESP8266WebServer httpServer(80);
 ESP8266HTTPUpdateServer httpUpdater;
+FtpServer ftpSrv;
 PubSubClient mqttClient("0.0.0.0", 1883, 0, wifiClient);
 Timezone tz;
 
@@ -345,6 +351,7 @@ bool UpdateConfiguration(String message)
         context.rawCounter = VolumeLToCount(totalVolumeL);
         context.totalVolumeL = CountToVolumeL(context.rawCounter);
         contextChanged = true;
+        updated = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: totalVolumeL[%s]\r\n", String(context.totalVolumeL, 3).c_str());
@@ -355,6 +362,7 @@ bool UpdateConfiguration(String message)
     {
         context.todayVolumeL = root["todayVolumeL"];
         contextChanged = true;
+        updated = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: todayVolumeL[%s]\r\n", String(context.todayVolumeL, 3).c_str());
@@ -365,6 +373,7 @@ bool UpdateConfiguration(String message)
     {
         context.yesterdayVolumeL = root["yesterdayVolumeL"];
         contextChanged = true;
+        updated = true;
 
 #if defined(USESERIAL)
         Serial.printf("UPDCFG: yesterdayVolumeL[%s]\r\n", String(context.yesterdayVolumeL, 3).c_str());
@@ -430,7 +439,7 @@ bool UpdateContext(String message)
     StaticJsonBuffer<JSON_OBJECT_SIZE(32) + 40> jsonBuffer;
 
     JsonObject& root = jsonBuffer.parse(message);
-    
+
     if (!root.containsKey("STATES"))
     {
 #if defined(USESERIAL)
@@ -548,9 +557,12 @@ void HandleTime()
     }
 }
 
-void ConfigureHttpOTA()
+void SetupHttpOTA()
 {
     MDNS.begin(configuration.name);
+    SPIFFS.begin();
+
+    ftpSrv.begin(OTA_USER, OTA_PWD);
 
     httpUpdater.setup(&httpServer, OTA_PATH, OTA_USER, OTA_PWD);
     httpServer.begin();
@@ -562,7 +574,7 @@ void ConfigureHttpOTA()
 #endif
 }
 
-void ConfigureArduinoOTA()
+void SetupArduinoOTA()
 {
 #if defined(USESERIAL)
     ArduinoOTA.onStart([]() {
@@ -589,6 +601,93 @@ void ConfigureArduinoOTA()
 #if defined(USESERIAL)
     Serial.println("ArduinoOTA: Initialized!");
 #endif
+}
+
+void SetupHttpConfigPage()
+{
+    httpServer.on("/", HttpHandleRoot);
+}
+
+void HttpReturnFail(String msg)
+{
+    httpServer.sendHeader("Connection", "close");
+    httpServer.sendHeader("Access-Control-Allow-Origin", "*");
+    httpServer.send(500, "text/plain", msg + "\r\n");
+}
+
+bool HttpSendIndex()
+{
+    if (!SPIFFS.exists(WEBCFG_INDEX_PAGE))
+    {
+#if defined(USESERIAL)
+        Serial.printf("WEBCFG: missing index page [%s]\r\n", WEBCFG_INDEX_PAGE);
+#endif
+        HttpReturnFail("Index page not found.");
+        return false;
+    }
+
+    File f = SPIFFS.open(WEBCFG_INDEX_PAGE, "r");
+    String index = f.readString();
+    f.close();
+
+    index.replace("%countsPerLiter%", String(configuration.countsPerLiter));
+    index.replace("%totalVolumeL%", String(context.totalVolumeL, 3));
+    index.replace("%todayVolumeL%", String(context.todayVolumeL, 3));
+    index.replace("%yesterdayVolumeL%", String(context.yesterdayVolumeL, 3));
+
+    httpServer.send(200, "text/html", index);
+
+#if defined(USESERIAL)
+    Serial.printf("WEBCFG: index page [%s] sent.\r\n", WEBCFG_INDEX_PAGE);
+#endif
+    return true;
+}
+
+void HttpHandleRoot()
+{
+#if defined(USESERIAL)
+    Serial.printf("WEBCFG: on/root args[%d]\r\n", httpServer.args());
+#endif
+
+    for (int i = 0; i < httpServer.args(); i++)
+    {
+        if (httpServer.argName(i).equals("countsPerLiter"))
+        {
+            configuration.countsPerLiter = httpServer.arg(i).toInt();
+#if defined(USESERIAL)
+            Serial.printf("WEBCFG: countsPerLiter[%lu]\r\n", configuration.countsPerLiter);
+#endif
+            SaveConfiguration();
+        }
+        else if (httpServer.argName(i).equals("totalVolumeL"))
+        {
+            context.rawCounter = VolumeLToCount(httpServer.arg(i).toFloat());
+            context.totalVolumeL = CountToVolumeL(context.rawCounter);
+
+#if defined(USESERIAL)
+            Serial.printf("WEBCFG: totalVolumeL[%s]\r\n", String(context.totalVolumeL, 3).c_str());
+#endif
+            contextChanged = true;
+        }
+        else if (httpServer.argName(i).equals("todayVolumeL"))
+        {
+            context.todayVolumeL = httpServer.arg(i).toFloat();
+#if defined(USESERIAL)
+            Serial.printf("WEBCFG: todayVolumeL[%s]\r\n", String(context.todayVolumeL, 3).c_str());
+#endif
+            contextChanged = true;
+        }
+        else if (httpServer.argName(i).equals("yesterdayVolumeL"))
+        {
+            context.yesterdayVolumeL = httpServer.arg(i).toFloat();
+#if defined(USESERIAL)
+            Serial.printf("WEBCFG: yesterdayVolumeL[%s]\r\n", String(context.yesterdayVolumeL, 3).c_str());
+#endif
+            contextChanged = true;
+        }
+    }
+
+    HttpSendIndex();
 }
 
 bool InitialWiFiConfiguration()
@@ -681,8 +780,9 @@ bool InitWiFi()
 
         ConfigureTime();
 
-        ConfigureHttpOTA();
-        ConfigureArduinoOTA();
+        SetupHttpConfigPage();
+        SetupHttpOTA();
+        SetupArduinoOTA();
     }
     else
     {
@@ -917,9 +1017,13 @@ void publishSettings()
 }
 
 volatile int pulseCount = 0;
+volatile int echo = 0;
 void sensorCallback()
 {
     pulseCount++;
+    echo = (echo == 0) ? 1 : 0;
+
+    digitalWrite(SENSOR_ECHO, echo);
 }
 
 float CountToVolumeL(uint32_t count)
@@ -1017,6 +1121,7 @@ void setup()
     digitalWrite(LED, LEDON);
 
     pinMode(SENSOR, INPUT);
+    pinMode(SENSOR_ECHO, OUTPUT);
 
     if (!LoadConfiguration())
         SaveConfiguration();
@@ -1076,6 +1181,7 @@ void loop()
     {
         ArduinoOTA.handle();
         httpServer.handleClient();
+        ftpSrv.handleFTP();
 
         mqttClient.loop();
 
