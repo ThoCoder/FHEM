@@ -204,7 +204,7 @@ void setup()
     rf12_initialize(myNodeID, freq, network);
     rf12_sleep(RF12_SLEEP);
 
-    pinMode(SENSOR, INPUT_PULLUP);
+    pinMode(SENSOR, INPUT/*_PULLUP*/);
     PCMSK0 |= (1 << PCINT0);
     GIMSK |= (1 << PCIE0);
 
@@ -273,10 +273,10 @@ void loop()
     if (success)
     {
 #if defined(LEDFLASHS)
-        flashLED(20, 1);
+        flashLED(10, 1);
 #elif defined(LEDFLASHONCHANGE)
         if (stateChanged)
-            flashLED(10, 1);
+            flashLED(5, 1);
 #endif
 
 #if defined(USESERIAL)
