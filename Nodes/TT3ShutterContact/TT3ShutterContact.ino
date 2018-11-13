@@ -1,4 +1,4 @@
-//#define USESERIAL
+#define USESERIAL
 //#define USESERIAL2
 //#define LEDFLASHS
 #define LEDFLASHONCHANGE
@@ -7,9 +7,13 @@
 #include <JeeLib.h>
 
 #define LED 7
+#if defined(__AVR_ATtiny84__) 
 #define SENSOR 10
+#else
+#define SENSOR 8
+#endif
 
-#define myNodeID 26
+#define myNodeID 25
 #define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
@@ -206,7 +210,11 @@ void setup()
 
     pinMode(SENSOR, INPUT/*_PULLUP*/);
     PCMSK0 |= (1 << PCINT0);
+#if defined(__AVR_ATtiny84__) 
     GIMSK |= (1 << PCIE0);
+#else
+    PCICR |= (1 << PCIE0);
+#endif
 
     Sleepy::loseSomeTime(1000);
     digitalWrite(LED, LOW);
