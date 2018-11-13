@@ -787,7 +787,7 @@ void PublishState()
 #if defined(USESERIAL)
                 Serial.println();
 #endif
-                snprintf(buffer, bufferLen - 1, "{ \"SETTINGS\" : { \"mqttCfgEnabled\": %d, \"ssid\": \"%s\", \"ipLocal\": \"%s\", \"mqttServer\": \"%s\", \"sleepTime\": %lu, \"maxIntervalTime\": %lu, \"vccMultiplier\": %s, \"vccThreshold\": %s, \"temperatureThreshold\": %s, \"humidityThreshold\": %s, \"pressureThreshold\": %s } }",
+                snprintf(buffer, bufferLen - 1, "{ \"mqttCfgEnabled\": %d, \"ssid\": \"%s\", \"ipLocal\": \"%s\", \"mqttServer\": \"%s\", \"sleepTime\": %lu, \"maxIntervalTime\": %lu, \"vccMultiplier\": %s, \"vccThreshold\": %s, \"temperatureThreshold\": %s, \"humidityThreshold\": %s, \"pressureThreshold\": %s }",
                     configuration.mqttCfgEnabled,
                     configuration.ssid, IPAddress(configuration.ipLocal).toString().c_str(), IPAddress(configuration.mqttServer).toString().c_str(),
                     configuration.sleepTime, configuration.maxIntervalTime,
@@ -804,7 +804,7 @@ void PublishState()
 #if defined(USESERIAL)
             Serial.println();
 #endif
-            snprintf(buffer, bufferLen - 1, "{ \"STATES\" : { \"sleepCount\": %lu, \"publishCount\": %lu, \"vcc\": %s, \"temperature\": %s, \"humidity\": %s, \"pressure\": %s, \"RSSI\": %ld } }",
+            snprintf(buffer, bufferLen - 1, "{ \"sleepCount\": %lu, \"publishCount\": %lu, \"vcc\": %s, \"temperature\": %s, \"humidity\": %s, \"pressure\": %s, \"RSSI\": %ld }",
                 context.sleepCount,
                 context.publishCount,
                 String(context.vcc, 3).c_str(),
