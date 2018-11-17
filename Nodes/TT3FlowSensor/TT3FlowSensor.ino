@@ -1,4 +1,4 @@
-#define USESERIAL
+//#define USESERIAL
 //#define USESERIAL2
 #define USELEDFLASHS
 #define USECONFIG
@@ -17,7 +17,7 @@
 #define network 99
 #define freq RF12_868MHZ
 #define ACK_TIME 50
-#define RETRYDELAY 500
+#define RETRYDELAY (500 + myNodeID*5)
 #define RETRIES 5
 #define WAITTIMEOUT_INIT 10000
 #define WAITTIMEOUT_LONG 300000
