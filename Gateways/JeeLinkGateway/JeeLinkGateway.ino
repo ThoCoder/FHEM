@@ -5,8 +5,9 @@
 #include "JeeLib.h"
 #include "avr\wdt.h"
 #include "postbox.h"
+#define REG_SYNCGROUP 0x33
 
-#define VERSION "[ThoGateway::JeeLink V2.2]"
+#define VERSION "[ThoGateway::JeeLink V2.3]"
 
 #define LED_PIN 9
 #define LED_ON LOW
@@ -221,13 +222,17 @@ void handleInput(char c)
 		{
 			postbox.Dump();
 		}
-		else if (top == 1)
+        else if (top == 1)
+        {
+            printf_P(PSTR("Missing nodeId\n"));
+        }
+        else if (top == 2)
+        {
+            postbox.ClearEntry(stack[0], stack[1]);
+        }
+        else
 		{
-			postbox.ClearEntry(stack[0]);
-		}
-		else
-		{
-			postbox.SetEntry(stack[0], stack + 1, top - 1);
+			postbox.SetEntry(stack[0], stack[1], stack + 2, top - 2);
 		}
 		break;
 
@@ -314,6 +319,7 @@ void loop()
 			bool dst = ((rf12_hdr & RF12_HDR_DST) != 0);
 			bool ack = ((rf12_hdr & RF12_HDR_ACK) != 0);
 			byte nodeId = rf12_hdr & RF12_HDR_MASK;
+            byte groupId = rf12_grp;
 
 #if defined(USESERIAL)
 			printf_P(PSTR("(-%3d) %c%c%c %2d DATA(%2d): "),
@@ -349,7 +355,10 @@ void loop()
 #if defined(USESERIAL)
 				printf_P(PSTR("ACK\n"));
 #endif
-				PostboxEntry* entry = postbox.GetEntry(nodeId);
+                if(GroupId == 0)
+                    RF69::control(REG_SYNCGROUP | 0x80, groupId); // Reply to incoming group number
+
+				PostboxEntry* entry = postbox.GetEntry(groupId, nodeId);
 				if (entry != NULL)
 				{
 					ackLen = entry->DataLen;
@@ -362,7 +371,7 @@ void loop()
 				}
 			}
 
-			printf_P(PSTR("OK %d %d %d "), (byte)DEVICETYPE, GroupId, nodeId);
+			printf_P(PSTR("OK %d %d %d "), (byte)DEVICETYPE, groupId, nodeId);
 			for (int i = 0; i < msgLen; i++)
 			{
 				printf_P(PSTR("%d "), msg[i]);
@@ -370,7 +379,7 @@ void loop()
 			printf_P(PSTR("(-%d)\n"), rssi);
 			if (acked)
 			{
-				printf_P(PSTR("Ack: %d %d\n"), nodeId, ackLen);
+				printf_P(PSTR("Ack: %d,%d,%d\n"), groupId, nodeId, ackLen);
 			}
 
 			activityLED(LED_OFF);

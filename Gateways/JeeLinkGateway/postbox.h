@@ -1,12 +1,13 @@
 #include "arduino.h"
 
 #define POSTBOXSIZE 30
-#define POSTBOXMAXMSGLEN 30
+#define POSTBOXMAXMSGLEN 29
 
 struct PostboxEntry
 {
-	byte NodeId;
-	byte DataLen;
+    byte GroupId;
+    byte NodeId;
+    byte DataLen;
 	byte Data[POSTBOXMAXMSGLEN];
 };
 
@@ -18,11 +19,11 @@ public:
 	Postbox();
 
 public:
-	bool SetEntry(byte nodeId, byte* data, byte datalen);
-	PostboxEntry* GetEntry(byte nodeId);
+	bool SetEntry(byte groupId, byte nodeId, byte* data, byte datalen);
+	PostboxEntry* GetEntry(byte groupId, byte nodeId);
 	PostboxEntry* GetFreeEntry();
 	void ClearEntry(PostboxEntry* entry);
-	void ClearEntry(byte nodeId);
+	void ClearEntry(byte groupId, byte nodeId);
 	void ClearAllEntries();
 	void DumpEntry(PostboxEntry* entry);
 	void Dump();

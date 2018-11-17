@@ -7,7 +7,7 @@ Postbox::Postbox()
 }
 
 // ----------------------------------------------------------------------------------------------------
-bool Postbox::SetEntry(byte nodeId, byte* data, byte datalen)
+bool Postbox::SetEntry(byte groupId, byte nodeId, byte* data, byte datalen)
 {
 	if (datalen == 0)
 		return false;
@@ -16,15 +16,16 @@ bool Postbox::SetEntry(byte nodeId, byte* data, byte datalen)
 	if (data == NULL)
 		return false;
 
-	PostboxEntry* entry = GetEntry(nodeId);
+	PostboxEntry* entry = GetEntry(groupId, nodeId);
 	if (entry == NULL)
 		entry = GetFreeEntry();
 	if (entry == NULL)
 		return false;
 
 	memcpy(entry->Data, data, datalen);
-	entry->DataLen = datalen;
-	entry->NodeId = nodeId;
+    entry->GroupId = groupId;
+    entry->NodeId = nodeId;
+    entry->DataLen = datalen;
 
 	//Serial.print("Postbox: new entry: ");
 	//DumpEntry(entry);
@@ -32,13 +33,13 @@ bool Postbox::SetEntry(byte nodeId, byte* data, byte datalen)
 }
 
 // ----------------------------------------------------------------------------------------------------
-PostboxEntry* Postbox::GetEntry(byte nodeId)
+PostboxEntry* Postbox::GetEntry(byte groupId, byte nodeId)
 {
 	for (byte i = 0; i < POSTBOXSIZE; i++)
 	{
 		PostboxEntry* entry = &m_Entries[i];
 
-		if (entry->NodeId == nodeId)
+		if ((entry->GroupId == groupId) && (entry->NodeId == nodeId))
 			return entry;
 	}
 
@@ -71,13 +72,13 @@ void Postbox::ClearEntry(PostboxEntry* entry)
 }
 
 // ----------------------------------------------------------------------------------------------------
-void Postbox::ClearEntry(byte nodeId)
+void Postbox::ClearEntry(byte groupId, byte nodeId)
 {
 	for (byte i = 0; i < POSTBOXSIZE; i++)
 	{
 		PostboxEntry* entry = &m_Entries[i];
 
-		if (entry->NodeId == nodeId)
+		if ((entry->GroupId == groupId) && (entry->NodeId == nodeId))
 		{
 			ClearEntry(entry);
 			return;
@@ -102,9 +103,11 @@ void Postbox::ClearAllEntries()
 // ----------------------------------------------------------------------------------------------------
 void Postbox::DumpEntry(PostboxEntry* entry)
 {
-	Serial.print("ID:");
-	Serial.print(entry->NodeId, DEC);
-	Serial.print(" LEN:");
+    Serial.print("GRP:");
+    Serial.print(entry->GroupId, DEC);
+    Serial.print(" ID:");
+    Serial.print(entry->NodeId, DEC);
+    Serial.print(" LEN:");
 	Serial.print(entry->DataLen, DEC);
 	Serial.print(" DATA:");
 
