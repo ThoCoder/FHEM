@@ -1,11 +1,11 @@
-#define USESERIAL
+//#define USESERIAL
 //#define USESERIAL2
 //#define LEDFLASHS
 
-//#define DHT22present 1
-//#define BMP180present 1
-#define BME280present 1
-#define BME280raw 1
+#define DHT22present 1
+#define BMP180present 1
+//#define BME280present 1
+//#define BME280raw 1
 #define RF69_COMPAT 1
 #include <JeeLib.h>
 
@@ -26,11 +26,11 @@
 #define BME280_I2Caddress 0x76
 #endif
 
-#define myNodeID 21
-#define network 99
+#define myNodeID 18
+#define network 101
 #define freq RF12_868MHZ
 #define ACK_TIME 50
-#define RETRYDELAY 500
+#define RETRYDELAY (500 + myNodeID*5)
 #define RETRIES 5
 #define WAITLOOPS 1
 #define WAITINTERVAL 59000
