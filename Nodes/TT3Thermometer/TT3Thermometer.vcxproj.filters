@@ -14,32 +14,32 @@
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
     <Filter Include="src">
-      <UniqueIdentifier>{b67b4033-c5d1-46bc-839d-9758a11bc288}</UniqueIdentifier>
+      <UniqueIdentifier>{e55c9ea5-6dc0-481b-adc4-cb6877611be9}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\_micro-api-readonly">
-      <UniqueIdentifier>{e44888b0-e8d0-4d16-a88d-5fdc3ff77a4d}</UniqueIdentifier>
+      <UniqueIdentifier>{54edf2fa-71d3-476c-a704-6355880eeae9}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\_micro-api-readonly\core">
-      <UniqueIdentifier>{79e14168-0d87-4ecb-8520-0af3f0ddd340}</UniqueIdentifier>
+      <UniqueIdentifier>{632dc7c3-e84f-4a36-81de-6f191567133d}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\_micro-api-readonly\libraries">
-      <UniqueIdentifier>{94dbd1e2-fbc8-49b2-b0f0-cc0fb722afb4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="src\_micro-api-readonly\libraries\Arduino_Software_I2C-master">
-      <UniqueIdentifier>{2a9f1e7e-d625-4e7e-bb47-0a0686dc54a6}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="src\_micro-api-readonly\libraries\Arduino-DHT22-master">
-      <UniqueIdentifier>{5c853db9-e21f-4860-9b82-0a55a5e35387}</UniqueIdentifier>
+      <UniqueIdentifier>{a74d7fb9-4788-4dd7-b47a-f548df798136}</UniqueIdentifier>
     </Filter>
     <Filter Include="src\_micro-api-readonly\libraries\jeelib-master">
-      <UniqueIdentifier>{51ee4c34-5b9f-4bf4-9be6-aa763af6f012}</UniqueIdentifier>
+      <UniqueIdentifier>{b2f4de9c-3cce-4904-bd54-f85d75d96886}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\_micro-api-readonly\libraries\MyAttinyBME280">
-      <UniqueIdentifier>{ee1a59b1-1b7c-427b-81a5-bbc6efbc43b7}</UniqueIdentifier>
+    <Filter Include="src\_micro-api-readonly\libraries\Arduino-DHT22-master">
+      <UniqueIdentifier>{e16a6346-8d3f-41b2-a7b6-b843130a6e03}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\_micro-api-readonly\libraries\Arduino_Software_I2C-master">
+      <UniqueIdentifier>{46622757-3cd9-4d61-b7c5-7258a4f5cd9b}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="TT3Thermometer.ino" />
+    <None Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\wiring_pulse.S">
+      <Filter>src\_micro-api-readonly\core</Filter>
+    </None>
     <None Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\library.properties">
       <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
     </None>
@@ -48,77 +48,65 @@
     <ClInclude Include="__vm\.TT3Thermometer.vsarduino.h">
       <Filter>Headerdateien</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Arduino.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Arduino.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\binary.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\binary.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_adc.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Client.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_build_options.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\HardwareSerial.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_macros.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\HardwareSerial_private.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_pins.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\IPAddress.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\core_timers.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\new.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\HardwareSerial.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\PluggableUSB.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\pins_arduino.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Print.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Print.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Printable.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\PwmTimer.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Server.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Stream.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Stream.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Udp.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\ToneTimer.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\USBAPI.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\UserTimer.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\USBCore.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WCharacter.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\USBDesc.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WConstants.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\WCharacter.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\wiring_private.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\wiring_private.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\WString.h">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WProgram.h">
+    <ClInclude Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\variants\standard\pins_arduino.h">
       <Filter>src\_micro-api-readonly\core</Filter>
-    </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WString.h">
-      <Filter>src\_micro-api-readonly\core</Filter>
-    </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\SeeedGrayOLED.h">
-      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
-    </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\SoftwareI2C.h">
-      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
-    </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\DHT22.h">
-      <Filter>src\_micro-api-readonly\libraries\Arduino-DHT22-master</Filter>
     </ClInclude>
     <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\JeeLib.h">
       <Filter>src\_micro-api-readonly\libraries\jeelib-master</Filter>
@@ -150,52 +138,70 @@
     <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF69_compat.h">
       <Filter>src\_micro-api-readonly\libraries\jeelib-master</Filter>
     </ClInclude>
-    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\MyAttinyBME280\MyAttinyBME280.h">
-      <Filter>src\_micro-api-readonly\libraries\MyAttinyBME280</Filter>
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\DHT22.h">
+      <Filter>src\_micro-api-readonly\libraries\Arduino-DHT22-master</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\SeeedGrayOLED.h">
+      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\SoftwareI2C.h">
+      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\HardwareSerial.cpp">
+    <ClCompile Include="MyAttinyBME280.cpp">
+      <Filter>Quelldateien</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\abi.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\main.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\CDC.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Print.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\HardwareSerial.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\HardwareSerial0.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial115200.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\HardwareSerial1.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial38400.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\HardwareSerial2.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerial9600.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\HardwareSerial3.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\TinyDebugSerialErrors.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\IPAddress.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\Tone.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\main.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WMath.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\new.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\hardware\tiny\avr\cores\tiny\WString.cpp">
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\PluggableUSB.cpp">
       <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\SeeedGrayOLED.cpp">
-      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Print.cpp">
+      <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\SoftwareI2C.cpp">
-      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Stream.cpp">
+      <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\DHT22.cpp">
-      <Filter>src\_micro-api-readonly\libraries\Arduino-DHT22-master</Filter>
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\Tone.cpp">
+      <Filter>src\_micro-api-readonly\core</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\USBCore.cpp">
+      <Filter>src\_micro-api-readonly\core</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\WMath.cpp">
+      <Filter>src\_micro-api-readonly\core</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Program Files (x86)\Arduino\hardware\arduino\avr\cores\arduino\WString.cpp">
+      <Filter>src\_micro-api-readonly\core</Filter>
     </ClCompile>
     <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\Ports.cpp">
       <Filter>src\_micro-api-readonly\libraries\jeelib-master</Filter>
@@ -224,22 +230,25 @@
     <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\RF69_compat.cpp">
       <Filter>src\_micro-api-readonly\libraries\jeelib-master</Filter>
     </ClCompile>
-    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\MyAttinyBME280\MyAttinyBME280.cpp">
-      <Filter>src\_micro-api-readonly\libraries\MyAttinyBME280</Filter>
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\DHT22.cpp">
+      <Filter>src\_micro-api-readonly\libraries\Arduino-DHT22-master</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\SeeedGrayOLED.cpp">
+      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\SoftwareI2C.cpp">
+      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Text Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\keywords.txt">
-      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
+    <Text Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\keywords.txt">
+      <Filter>src\_micro-api-readonly\libraries\jeelib-master</Filter>
     </Text>
     <Text Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino-DHT22-master\keywords.txt">
       <Filter>src\_micro-api-readonly\libraries\Arduino-DHT22-master</Filter>
     </Text>
-    <Text Include="C:\Users\Thomas\Documents\Arduino\libraries\jeelib-master\keywords.txt">
-      <Filter>src\_micro-api-readonly\libraries\jeelib-master</Filter>
-    </Text>
-    <Text Include="C:\Users\Thomas\Documents\Arduino\libraries\MyAttinyBME280\keywords.txt">
-      <Filter>src\_micro-api-readonly\libraries\MyAttinyBME280</Filter>
+    <Text Include="C:\Users\Thomas\Documents\Arduino\libraries\Arduino_Software_I2C-master\keywords.txt">
+      <Filter>src\_micro-api-readonly\libraries\Arduino_Software_I2C-master</Filter>
     </Text>
   </ItemGroup>
 </Project>
