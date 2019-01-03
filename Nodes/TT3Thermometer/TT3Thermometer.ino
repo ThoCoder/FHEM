@@ -37,7 +37,7 @@
 #endif
 #endif
 
-#define myNodeID 2
+#define myNodeID 3
 #define network 101
 #define freq RF12_868MHZ
 #define ACK_TIME 50
@@ -56,13 +56,19 @@ int16_t sentP = -1000;
 #define THRES_P 10
 byte skipCount = 0;
 byte failureCount = 0;
+uint32_t measurementCount = 0;
+uint32_t sendingCount = 0;
+byte recoveryCount = 0;
 
 #define CMD_temperature 11
 #define CMD_temperature2 13
 #define CMD_pressure 14
 #define CMD_humidity 17
 #define CMD_PowerSupply 252
-#define CMD_SenderRSSI 196
+#define CMD_RemoteRSSI 101
+#define CMD_MeasurementCount 102
+#define CMD_SendingCount 103
+#define CMD_RecoveryCount 104
 
 #if defined(DHT22present)
 #define DHT22_NO_FLOAT
@@ -97,6 +103,12 @@ struct DataPacket
     uint16_t power;		// mV * 10
     byte senderRssiCmd;
     byte senderRssi;	// dB * -1
+    byte measurementCountCmd;
+    uint32_t measurementCount;
+    byte sendingCountCmd;
+    uint32_t sendingCount;
+    byte recoveryCountCmd;
+    byte recoveryCount;
 #if defined(DHT22present)
     byte tempCmd;
     int16_t temp;		// °C * 10
@@ -121,7 +133,10 @@ struct DataPacket
     DataPacket()
     {
         powerCmd = CMD_PowerSupply;
-        senderRssiCmd = CMD_SenderRSSI;
+        senderRssiCmd = CMD_RemoteRSSI;
+        measurementCountCmd = CMD_MeasurementCount;
+        sendingCountCmd = CMD_SendingCount;
+        recoveryCountCmd = CMD_RecoveryCount;
 #if defined(DHT22present)
         tempCmd = CMD_temperature;
         humidityCmd = CMD_humidity;
@@ -448,11 +463,30 @@ void readBME280(int16_t& t, int16_t& p, int16_t& h)
 
 #endif
 
+void InitRF()
+{
+    rf12_initialize(myNodeID, freq, network);
+#if defined(isHCW)
+    RF69::control(0x11 | 0x80, 0b01011111); // PA1 on
+    RF69::control(0x13 | 0x80, 0b00011010); // OCP on 95mA
+#endif
+    rf12_sleep(RF12_SLEEP);
+    //DumpRFRegs();
+}
+
 void reset()
 {
-    Serial.println("\nRESET ...");
+    recoveryCount++;
+
+#if defined(USESERIAL)
+    Serial.print("\nRESET (");
+    Serial.print(recoveryCount);
+    Serial.println(") ...");
     Serial.flush();
-    asm("call 0");
+#endif
+
+    //asm("call 0");
+    InitRF();
 }
 
 void setup()
@@ -502,13 +536,7 @@ void setup()
 #endif
 #endif
 
-    rf12_initialize(myNodeID, freq, network);
-#if defined(isHCW)
-    RF69::control(0x11 | 0x80, 0b01011111); // PA1 on
-    RF69::control(0x13 | 0x80, 0b00011010); // OCP on 95mA
-#endif
-    rf12_sleep(RF12_SLEEP);
-    //DumpRFRegs();
+    InitRF();
 
     deepSleep(1000);
     digitalWrite(LED, LOW);
@@ -517,6 +545,8 @@ void setup()
 void loop()
 {
     // MEASURE
+    measurementCount++;
+
 #if defined(DHT22present)
 #if defined(USESERIAL)
     Serial.println("DHT22");
@@ -687,8 +717,16 @@ void loop()
         skipCount = 0;
 
         // SEND
+        sendingCount++;
+
+        data.measurementCount = measurementCount;
+        data.sendingCount = sendingCount;
+        data.recoveryCount = recoveryCount;
+
 #if defined(USESERIAL)
-        Serial.println("SEND");
+        Serial.print("SEND (");
+        Serial.print(sendingCount);
+        Serial.println(")");
 #endif
         word retryDelay = RETRYDELAY;
         byte retry = 0;
@@ -738,6 +776,10 @@ void loop()
         else
         {
             failureCount++;
+
+            sentT = -1000;
+            sentH = -1000;
+            sentP = -1000;
 
 #if defined(LEDFLASHS)
             flashLED(100, 3);
