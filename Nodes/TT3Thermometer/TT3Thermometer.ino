@@ -1,4 +1,4 @@
-#define USESERIAL
+//#define USESERIAL
 //#define USESERIAL2
 //#define LEDFLASHS
 
@@ -47,7 +47,7 @@
 #define WAITINTERVAL 59000
 #define MAXSENDSKIPS 6
 #define MAXFAILURES 2
-#define MINVCC 35000
+#define MINVCC 29000
 
 int16_t sentT = -1000;
 int16_t sentH = -1000;
