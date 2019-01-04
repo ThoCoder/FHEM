@@ -1,4 +1,4 @@
-//#define USESERIAL
+#define USESERIAL
 //#define USESERIAL2
 //#define LEDFLASHS
 
@@ -47,6 +47,7 @@
 #define WAITINTERVAL 59000
 #define MAXSENDSKIPS 6
 #define MAXFAILURES 2
+#define MINVCC 35000
 
 int16_t sentT = -1000;
 int16_t sentH = -1000;
@@ -544,6 +545,23 @@ void setup()
 
 void loop()
 {
+    // MEASURE VCC
+    data.power = readVcc() * 10;
+
+    if (data.power < MINVCC)
+    {
+#if defined(USESERIAL)
+        Serial.print("Vcc too low (Vcc=");
+        Serial.print(data.power);
+        Serial.print(" minVcc=");
+        Serial.print(MINVCC);
+        Serial.print(") POWER DOWN!\n");
+        Serial.flush();
+#endif
+        Sleepy::powerDown();
+        return;
+    }
+
     // MEASURE
     measurementCount++;
 
@@ -650,9 +668,6 @@ void loop()
     int16_t dT = data.temp - sentT;
     int16_t dH = data.humidity - sentH;
     int16_t dP = data.pressure - sentP;
-
-    // MEASURE VCC
-    data.power = readVcc() * 10;
 
     // TRACE
 #if defined(USESERIAL)
