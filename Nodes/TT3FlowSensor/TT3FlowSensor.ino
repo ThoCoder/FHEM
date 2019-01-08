@@ -28,10 +28,10 @@
 bool triggerSend = false;
 uint32_t waitTimeout = WAITTIMEOUT_INIT;
 
-// ThoGateway::JeeLink V2.1
-//   set counters       : <nodeID>,<totalVolume>D,<todayVolume>D,<yesterdayVolume>Dm
-//   reset day counter  : <nodeID>,0D,255,255,255,255,0Dm
-//   set countsPerLitre : <nodeID>,255,255,255,255,<countsPerLitre>Dm
+// ThoGateway::JeeLink V2.4
+//   set counters       : <netID>,<nodeID>,<totalVolume>D,<todayVolume>D,<yesterdayVolume>Dm
+//   reset day counter  : <netID>,<nodeID>,0D,255,255,255,255,0Dm
+//   set countsPerLitre : <netID>,<nodeID>,255,255,255,255,<countsPerLitre>Dm
 //
 // all volume values are in ml calculated from counter values 
 //   volume = 1000 * counter / COUNTSPERLITRE)

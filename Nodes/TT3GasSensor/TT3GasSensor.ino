@@ -23,9 +23,11 @@
 #define MIDLEVEL 465
 #define THRESHOLD 15
 
-// set counter (RF12Demo V12.1):            195,nnnnnnD10m
-// set counter (ThoGateway::JeeLink V2.1):  10,195,nnnnnnDm
-// nnnnnn .. gas counter value to set in (0.1m^3 / DEVIDER) units
+// ThoGateway::JeeLink V2.4
+//   set counters       : <netID>,<nodeID>,<totalVolume>D,<todayVolume>D,<yesterdayVolume>D,<thresHigh>W,<thresLow>Wm
+//   reset day counter  : <netID>,<nodeID>,0D,255,255,255,255,0D,0W,0Wm
+//
+// <xxx> .. gas counter value to set in (0.1m^3 / DEVIDER) units
 
 uint16_t gcSensorValue;
 byte gcSensorPrevState = 255;
