@@ -4,12 +4,13 @@
 
 #define BOARD_JEELINK
 #define RF69_COMPAT 1
+#define isHCW
 #include "JeeLib.h"
 #include "avr\wdt.h"
 #include "postbox.h"
 #define REG_SYNCGROUP 0x33
 
-#define VERSION "[ThoGateway::JeeLink V2.4]"
+#define VERSION "[ThoGateway::JeeLink V2.5]"
 #if defined(BOARD_JEELINK)
 #define LED_PIN 9
 #define LED_ON LOW
@@ -140,10 +141,59 @@ const char helpText[] PROGMEM =
 "r                ... reset\n"
 "\n\n";
 
+uint8_t writeReg(uint8_t addr, uint8_t val) { return RF69::control(addr | 0x80, val); }
+uint8_t readReg(uint8_t addr) { return RF69::control(addr, 0); }
+
+void PrintRFReg(uint16_t addr)
+{
+    printf_P(PSTR("%02X = %02X\n"), addr, readReg(addr));
+}
+
+void DumpRFRegs()
+{
+    printf_P(PSTR("RF Registers:\n"));
+    printf_P(PSTR("AA  0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n\n"));
+
+    for (uint16_t line = 0; line < 5; line++)
+    {
+        printf_P(PSTR("%02X "), line * 16);
+
+        for (uint16_t r = 0; r < 16; r++)
+        {
+            uint16_t addr = line * 16 + r;
+            if (addr == 0)
+            {
+                printf_P(PSTR("XX "));
+                continue;
+            }
+
+            uint8_t val = readReg(addr);
+
+            printf_P(PSTR("%02X "), val);
+        }
+        printf_P(PSTR("\n"));
+
+    }
+    printf_P(PSTR("\n"));
+
+    PrintRFReg(0x58);
+    PrintRFReg(0x5a);
+    PrintRFReg(0x5c);
+    PrintRFReg(0x5f);
+    PrintRFReg(0x6f);
+    PrintRFReg(0x71);
+    printf_P(PSTR("\n"));
+}
+
 void initRF()
 {
     rf12_initialize(NODEID, RF12_868MHZ, (GroupCount > 1) ? GROUPID_ALL : GroupId);
+#if defined(isHCW)
+    RF69::control(0x11 | 0x80, 0b01011111); // PA1 on
+    RF69::control(0x13 | 0x80, 0b00011010); // OCP on 95mA
+#endif
     setRssiThreshold();
+    //DumpRFRegs();
 }
 
 void handleInput(char c)
