@@ -4,7 +4,7 @@
 
 #define BOARD_JEELINK
 #define RF69_COMPAT 1
-#define isHCW
+//#define isHCW
 #include "JeeLib.h"
 #include "avr\wdt.h"
 #include "postbox.h"

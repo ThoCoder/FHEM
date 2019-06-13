@@ -5,10 +5,10 @@
 //#define DHT22present 1
 //#define BMP180present 1
 #define BME280present 1
-#define BME280_5V 1
+//#define BME280_5V 1
 //#define BME280raw 1
 #define RF69_COMPAT 1
-//#define isHCW
+#define isHCW
 #include <JeeLib.h>
 
 #define LED 7
@@ -37,8 +37,8 @@
 #endif
 #endif
 
-#define myNodeID 3
-#define network 101
+#define myNodeID 11
+#define network 150
 #define freq RF12_868MHZ
 #define ACK_TIME 50
 #define RETRYDELAY (599 - network + myNodeID*5)
